@@ -44,9 +44,11 @@ export function runAuction(
   taskId: string,
   requiredSkills: string[]
 ): AgentBid[] {
+  const normalize_ = (s: string) => s.replace(/-/g, "_");
   const bids = agents.map((agent) => {
+    const agentSkills = agent.skills.map(normalize_);
     const skillMatch =
-      requiredSkills.filter((s) => agent.skills.includes(s)).length /
+      requiredSkills.map(normalize_).filter((s) => agentSkills.includes(s)).length /
       Math.max(requiredSkills.length, 1);
     return computeUtilityBid(agent, taskId, skillMatch);
   });

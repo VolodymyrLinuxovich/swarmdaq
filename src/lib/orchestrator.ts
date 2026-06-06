@@ -102,10 +102,14 @@ async function selectAgentForTask(
   );
   const bids = runAuction(eligibleAgents, task.id, task.requiredSkills);
 
+  // Normalize skill names to underscore format for matching
+  const normalizeSkill = (s: string) => s.replace(/-/g, "_");
+
   // Score each candidate
   const scored = eligibleAgents.map((agent) => {
+    const agentSkills = agent.skills.map(normalizeSkill);
     const skillMatch =
-      task.requiredSkills.filter((s) => agent.skills.includes(s)).length /
+      task.requiredSkills.map(normalizeSkill).filter((s) => agentSkills.includes(s)).length /
       Math.max(task.requiredSkills.length, 1);
     const bid = bids.find((b) => b.agentId === agent.id);
     const ucb = ucbMap[agent.id] ?? 0;
@@ -124,7 +128,7 @@ async function selectAgentForTask(
 
   // Build decision log for this task (top 3 candidates)
   const topCandidates = [...scored].sort((a, b) => b.score - a.score).slice(0, 3).map((s) => {
-    const skillMatch = task.requiredSkills.filter((sk) => s.agent.skills.includes(sk)).length / Math.max(task.requiredSkills.length, 1);
+    const skillMatch = task.requiredSkills.map(normalizeSkill).filter((sk) => s.agent.skills.map(normalizeSkill).includes(sk)).length / Math.max(task.requiredSkills.length, 1);
     const ucb = ucbMap[s.agent.id] ?? 0;
     const trust = clamp01((trustMap[s.agent.id] ?? 0.1) * 5);
     return {
@@ -171,6 +175,17 @@ async function selectAgentForTask(
     const builderAgent = scored.find((s) => s.agent.id === "builder");
     if (builderAgent) return { agent: builderAgent.agent, bids, decisionEntry: makeEntry(builderAgent.agent) };
   }
+
+  // Newcomer tryout: a custom agent with 0 runs and perfect skill match gets one guaranteed slot
+  const newcomer = scored.find(
+    (s) =>
+      s.agent.id.startsWith("custom_") &&
+      s.agent.runs === 0 &&
+      task.requiredSkills.map(normalizeSkill).every((sk) =>
+        s.agent.skills.map(normalizeSkill).includes(sk)
+      )
+  );
+  if (newcomer) return { agent: newcomer.agent, bids, decisionEntry: makeEntry(newcomer.agent) };
 
   scored.sort((a, b) => b.score - a.score);
   return { agent: scored[0].agent, bids, decisionEntry: makeEntry(scored[0].agent) };
@@ -416,6 +431,31 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
       role: agent.role,
     });
     await appendMissionEvent({ eventType: "reputation_updated", missionId, runNumber: runNum, timestamp: Date.now(), agentId: upd.id, agentName: agent.name, delta: upd.delta, score: evalScore.overall, message: `Rep ${upd.delta > 0 ? "+" : ""}${upd.delta}: ${upd.reason}` });
+  }
+
+  // Update stats for all selected agents not already covered by repUpdates
+  const updatedIds = new Set(repUpdates.map((u) => u.id));
+  for (const agent of selectedAgents) {
+    if (updatedIds.has(agent.id)) continue;
+    const evalNorm = clamp01(evalScore.overall / 100);
+    const bayesian = updateBayesianReputation(agent, evalNorm);
+    await updateAgent(agent.id, {
+      alpha: bayesian.alpha,
+      beta: bayesian.beta,
+      bayesianMean: bayesian.bayesianMean,
+      uncertainty: bayesian.uncertainty,
+      runs: agent.runs + 1,
+      meanReward: (agent.meanReward * agent.runs + evalNorm) / (agent.runs + 1),
+      status: "done",
+    });
+    await appendAgentHistory(agent.id, {
+      missionId,
+      runNumber: runNum,
+      score: evalScore.overall,
+      delta: 0,
+      timestamp: Date.now(),
+      role: agent.role,
+    });
   }
 
   if (runNum >= 2) {

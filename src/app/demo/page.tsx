@@ -747,10 +747,12 @@ function LiveTicker({ agents, reputationChanges }: { agents: Agent[]; reputation
 // ── Agent Studio ──────────────────────────────────────────────────────────────
 
 const STUDIO_SKILLS = [
-  "research", "fact-checking", "writing", "analysis", "risk-assessment",
-  "market-analysis", "pitch-craft", "evaluation", "synthesis", "skepticism",
-  "source-verification", "strategic-planning", "data-analysis", "narrative",
-  "financial-modeling", "technical-review", "competitor-analysis",
+  "research", "market_analysis", "competitive_intel", "data_synthesis",
+  "fact_checking", "source_validation", "skepticism", "risk_assessment",
+  "pitch", "narrative", "copywriting", "storytelling",
+  "product_design", "ux_analysis", "positioning", "go_to_market",
+  "evaluation", "scoring", "analysis", "strategy",
+  "planning", "coordination", "financial_modeling", "technical_review",
 ];
 
 const STUDIO_PROVIDERS: Array<{ value: "gemini" | "openai" | "anthropic"; label: string; color: string }> = [

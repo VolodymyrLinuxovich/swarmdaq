@@ -3,10 +3,12 @@ import { addCustomAgent, getCustomAgents } from "@/lib/memory";
 import type { Agent } from "@/lib/types";
 
 const ALLOWED_SKILLS = new Set([
-  "research", "fact-checking", "writing", "analysis", "risk-assessment",
-  "market-analysis", "pitch-craft", "evaluation", "synthesis", "skepticism",
-  "source-verification", "strategic-planning", "data-analysis", "narrative",
-  "financial-modeling", "ux-analysis", "technical-review", "competitor-analysis",
+  "research", "market_analysis", "competitive_intel", "data_synthesis",
+  "fact_checking", "source_validation", "skepticism", "risk_assessment",
+  "pitch", "narrative", "copywriting", "storytelling",
+  "product_design", "ux_analysis", "positioning", "go_to_market",
+  "evaluation", "scoring", "analysis", "strategy",
+  "planning", "coordination", "financial_modeling", "technical_review",
 ]);
 
 const ALLOWED_PROVIDERS = new Set(["gemini", "openai", "anthropic"]);
@@ -43,8 +45,14 @@ export async function POST(req: Request) {
   }
 
   const id = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const bayesianMean = 0.5;
-  const uncertainty = 0.15;
+
+  // Derive priors from the requested reputation so the agent is competitive from the start
+  const repNorm = reputation / 100;          // 0.50–0.82
+  const bayesianMean = repNorm;
+  const alpha = Math.round(repNorm * 10);    // e.g. rep=74 → alpha=7
+  const beta = Math.round((1 - repNorm) * 10) + 1;  // lower bound 1
+  const uncertainty = Math.max(0.06, 0.20 - repNorm * 0.15);
+  const eloStart = 1200 + Math.round((reputation - 50) * 5); // 1200–1360
 
   const agent: Agent = {
     id,
@@ -54,21 +62,21 @@ export async function POST(req: Request) {
     skills,
     price,
     reputation,
-    factuality: 0.72,
-    usefulness: 0.75,
-    collaboration: 0.70,
+    factuality: parseFloat((repNorm * 0.85 + 0.10).toFixed(3)),
+    usefulness: parseFloat((repNorm * 0.85 + 0.12).toFixed(3)),
+    collaboration: parseFloat((repNorm * 0.80 + 0.12).toFixed(3)),
     latencyAvg: 2.0,
     status: "idle",
-    alpha: 2,
-    beta: 2,
-    meanReward: 0.70,
+    alpha,
+    beta,
+    meanReward: repNorm,
     uncertainty,
     runs: 0,
     wins: 0,
     losses: 0,
-    elo: 1200,
-    ucbScore: 0.75,
-    graphTrust: 0.50,
+    elo: eloStart,
+    ucbScore: bayesianMean,
+    graphTrust: parseFloat((repNorm * 0.60 + 0.10).toFixed(3)),
     bayesianMean,
   };
 
