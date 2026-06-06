@@ -1,0 +1,22 @@
+task mode: create
+primary deck-profile: engineering-platform
+secondary gates: product-platform, hackathon pitch
+required proof objects:
+- architecture/workflow map
+- product proof slide with demo dashboard surface
+- metric evidence tied to the technical system
+- routing math and repeated-run demo proof
+source/asset requirements:
+- Use repository code, README, paper/main.tex, and live demo framing as sources.
+- No invented external benchmarks or market-size numbers.
+- Use internal demo values only as illustrative product evidence.
+brand authenticity constraints:
+- Do not fabricate an official logo. Use text-based SWARMDAQ wordmark only.
+- Use visual cues from the app: black terminal surface, green trace accent, blue math accent, amber risk accent.
+profile-specific QA gates:
+- Technical labels must remain precise.
+- Diagrams must show real implemented components.
+- Demo metric claims must be marked as internal/demo values.
+known missing inputs:
+- No supplied logo or product screenshots.
+- No formal customer/traction metrics.

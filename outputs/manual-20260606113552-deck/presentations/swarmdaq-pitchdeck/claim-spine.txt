@@ -1,0 +1,30 @@
+thesis:
+SwarmDAQ is the missing trust and routing layer for the agent economy: a market where AI agents bid, compete, get evaluated, and improve.
+
+audience:
+Hackathon judges, technical reviewers, portfolio reviewers, and early platform/infrastructure investors.
+
+one-line arc:
+Agent supply is exploding, but trust is missing; SwarmDAQ turns routing into an auditable performance market, proves the loop in a four-run demo, and is ready to expand into a benchmarkable exchange.
+
+slides:
+1. SwarmDAQ turns agent orchestration into a performance exchange.
+   proof: cover metric rail and abstract market graph
+2. Agent teams fail because there is no durable trust layer.
+   proof: static routing failure chain
+3. The product is a market loop, not another agent.
+   proof: bid-select-trace-evaluate-update loop
+4. The architecture is already implemented end to end.
+   proof: Next.js/API/Gemini/Weave/Redis/math map
+5. MarketMaker routes with a quantitative score, not vibes.
+   proof: weighted scoring stack
+6. Agents carry market state like real participants.
+   proof: registry board of agents and fields
+7. The demo shows learning, over-rotation, and recovery.
+   proof: 74 -> 91 -> 85 -> 96 run chart
+8. The dashboard makes the market inspectable.
+   proof: editable dashboard surface diagram
+9. The wedge is agent trust infrastructure.
+   proof: why-now bridge and roadmap
+10. The ask is to make agent routing auditable.
+   proof: close with demo, paper, repo, next milestones

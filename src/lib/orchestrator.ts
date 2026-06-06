@@ -44,6 +44,7 @@ import {
 } from "./math/graphTrust";
 import { computeContributionLedger } from "./math/contribution";
 import { normalize, clamp01, weightedSum } from "./math/agentMath";
+import type { StreamEvent } from "./types";
 
 // Task-agent affinity reference — routing uses MarketMaker scores, not this map directly
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -189,7 +190,8 @@ async function planTasksForMission(mission: string): Promise<Task[]> {
   }));
 }
 
-export async function runMission(mission: string, clientRunNumber?: number): Promise<MissionResult> {
+export async function runMission(mission: string, clientRunNumber?: number, onEvent?: (e: StreamEvent) => void): Promise<MissionResult> {
+  const emit = (e: StreamEvent) => { try { onEvent?.(e); } catch {} };
   resetTokenAccumulator();
   const missionId = uuidv4();
   const agents = await getAgents();
@@ -200,12 +202,14 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
   await traceEvent({ type: "mission_received", data: { missionId, mission, runNum } });
   await appendMissionEvent({ eventType: "mission_received", missionId, runNumber: runNum, timestamp: Date.now(), message: `Mission received: "${mission.slice(0, 80)}"` });
   await appendMarketFeed({ timestamp: Date.now(), eventType: "mission_started", text: `Run #${runNum} started: "${mission.slice(0, 60)}"`, color: "#00aaff" });
+  emit({ type: "phase", phase: "planning" });
 
   // Mark planner as running
   await updateAgent("planner", { status: "running" });
   await traceEvent({ type: "plan_mission", data: { missionId } });
 
   const tasks = await planTasksForMission(mission);
+  emit({ type: "tasks", tasks });
 
   await updateAgent("planner", { status: "done" });
 
@@ -239,6 +243,7 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
     }
 
     await updateAgent(agent.id, { status: "selected" });
+    emit({ type: "bid", taskType: task.type, winnerName: agent.name, bids: bids.slice(0, 3), decisionEntry });
   }
 
   // Always include evaluator
@@ -253,6 +258,8 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
     data: { selectedAgents: selectedAgents.map((a) => a.name) },
   });
   await appendMissionEvent({ eventType: "swarm_selected", missionId, runNumber: runNum, timestamp: Date.now(), message: `Swarm selected: ${selectedAgents.map((a) => a.name).join(", ")}` });
+  emit({ type: "swarm", agents: selectedAgents });
+  emit({ type: "phase", phase: "executing" });
 
   // Execution phase
   const outputs: Record<string, string> = {};
@@ -267,6 +274,7 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
     await updateAgent(agent.id, { status: "running" });
     await traceEvent({ type: "run_agent", data: { agentId: agent.id, task: task.type } });
     await appendMissionEvent({ eventType: "agent_started", missionId, runNumber: runNum, timestamp: Date.now(), agentId: agent.id, agentName: agent.name, message: `${agent.name} started task: ${task.type}` });
+    emit({ type: "agent_start", agentId: agent.id, agentName: agent.name, taskType: task.type });
 
     const output = await generateAgentOutput({
       agentName: agent.name,
@@ -281,6 +289,7 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
     task.status = "done";
     await updateAgent(agent.id, { status: "done" });
     await appendMissionEvent({ eventType: "agent_completed", missionId, runNumber: runNum, timestamp: Date.now(), agentId: agent.id, agentName: agent.name, message: `${agent.name} completed task: ${task.type}` });
+    emit({ type: "agent_done", agentId: agent.id, agentName: agent.name, taskType: task.type, output });
   }
 
   // Evaluation
@@ -309,9 +318,12 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
   }
 
   await updateAgent("evaluator", { status: "done" });
+  emit({ type: "phase", phase: "evaluating" });
+  emit({ type: "score", evalScore });
 
   // Reputation updates
   await traceEvent({ type: "update_reputation", data: { runNum } });
+  emit({ type: "phase", phase: "updating" });
 
   const reputationChanges: ReputationChange[] = [];
 
@@ -371,7 +383,7 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
       status: upd.delta > 0 ? "promoted" : upd.delta < 0 ? "penalized" : "done",
     });
 
-    reputationChanges.push({
+    const repChange = {
       agentId: upd.id,
       agentName: agent.name,
       delta: upd.delta,
@@ -379,7 +391,9 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
       eloDelta: eloResult.deltaA,
       alphaDelta: bayesian.alpha - agent.alpha,
       betaDelta: bayesian.beta - agent.beta,
-    });
+    };
+    reputationChanges.push(repChange);
+    emit({ type: "rep_change", change: repChange });
 
     // Market feed + agent history
     const labelColors: Record<string, string> = { promoted: "#00ff88", penalized: "#ef4444", done: "#fbbf24" };
@@ -562,6 +576,7 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
 
   await recordMission(result);
   await storeMission(result);
+  emit({ type: "done", result });
   await appendMissionEvent({ eventType: "mission_completed", missionId, runNumber: runNum, timestamp: Date.now(), score: evalScore.overall, message: `Mission complete — score ${evalScore.overall}/100` });
   await appendMarketFeed({ timestamp: Date.now(), eventType: "mission_complete", text: `Run #${runNum} complete — score ${evalScore.overall}/100. Swarm: ${selectedAgents.map((a) => a.name).join(", ")}`, color: evalScore.overall >= 90 ? "#00ff88" : evalScore.overall >= 80 ? "#fbbf24" : "#ef4444" });
 

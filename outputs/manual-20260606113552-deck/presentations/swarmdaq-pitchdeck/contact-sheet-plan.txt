@@ -1,0 +1,16 @@
+Slide rhythm:
+1. Cover with metric rail and abstract market graph
+2. Split failure chain with consequence rail
+3. Circular/sequential market loop
+4. Horizontal architecture map with memory feedback
+5. Formula stack and signal decomposition
+6. Agent registry board with compact state fields
+7. Demo score chart with annotation callouts
+8. Dashboard surface mockup with product panels
+9. Why-now wedge and roadmap bridge
+10. Close with thesis, assets, and next milestones
+
+Macro-layout constraints:
+- No more than two card-grid slides.
+- No three consecutive slides share the same macro layout.
+- Every slide has one dominant proof object.

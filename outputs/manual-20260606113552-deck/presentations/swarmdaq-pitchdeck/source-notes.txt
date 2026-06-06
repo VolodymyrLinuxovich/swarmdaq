@@ -1,0 +1,18 @@
+Sources used:
+- Local repository: /Users/volodymyrborysenko/Code/swarmdaq
+- README.md after remote update and paper integration
+- paper/main.tex and paper/sections/*.tex
+- src/lib/orchestrator.ts for repeated-run scores and routing loop
+- src/lib/math/*.ts for UCB1, auction, reputation, graph trust, portfolio, and contribution logic
+- src/lib/types.ts and src/lib/agents.ts for agent registry fields
+- src/app/demo/page.tsx and src/app/benchmark/page.tsx for dashboard and benchmark harness behavior
+- GitHub Actions run verified: Build Paper success after workflow fix
+
+Metric/source discipline:
+- 74, 91, 85, and 96 are internal demo values encoded in the repo.
+- 9 agents and 7 math signals are repo/product claims.
+- No external market size, revenue, user, or production deployment metrics are used.
+
+Identity assets:
+- No official SwarmDAQ logo asset exists in the repository.
+- Deck uses a text wordmark only and does not invent an official mark.

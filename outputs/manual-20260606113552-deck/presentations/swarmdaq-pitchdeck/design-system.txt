@@ -1,0 +1,31 @@
+slide size: 1280x720
+background:
+- deep terminal ink (#030705) with subtle grid and sparse signal lines
+typography:
+- Helvetica / Arial compatible sans
+- cover title 72px, slide titles 36-46px, body 18-24px, labels 12-15px
+palette:
+- base: #030705, #0B1110, #15201D, #DDEFE7
+- primary accent: #00FF88
+- secondary accent: #00A3FF
+- risk accent: #FFB020
+- danger/regression: #FF4D5E
+chart grammar:
+- direct labels, no legends when possible
+- internal/demo values footnoted
+diagram grammar:
+- clean nodes, hairline connectors, stage numbers, exact technical labels
+connector grammar:
+- direction shown by ordered stage numbers and aligned flow; avoid ambiguous crossing
+container grammar:
+- containers imply dashboards, lanes, or data groupings only
+footer grammar:
+- small source note at bottom left and page marker at bottom right
+title/kicker grammar:
+- all slides use all-caps kicker and claim title
+brand asset policy:
+- text-only SWARMDAQ wordmark; no fabricated logo
+allowed layout families:
+- cover metric rail, failure chain, loop map, architecture stack, formula stack, registry board, line chart, dashboard surface, roadmap bridge, close
+banned motifs:
+- fake logos, stock photos, generic feature-card grids, one-note green-only palette, inflated traction claims

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useCopilotReadable } from "@copilotkit/react-core";
-import type { MissionResult, Agent, AgentBid, ReputationChange, ShapleyContribution, AgentMessage, MarketDecisionEntry } from "@/lib/types";
+import type { MissionResult, Agent, AgentBid, ReputationChange, ShapleyContribution, AgentMessage, MarketDecisionEntry, StreamEvent, EvalScore } from "@/lib/types";
 import { AGENT_PROVIDER, PROVIDER_COLORS } from "@/lib/providers-config";
 import type { TraceSummary } from "@/app/api/traces/route";
 import { getAgentLabel } from "@/components/copilot/WeakAgentCard";
@@ -59,7 +59,7 @@ const MSG_ICONS: Record<AgentMessage["type"], string> = {
 
 // ── Components ───────────────────────────────────────────────────────────────
 
-function AgentCard({ agent, bid, delay = 0 }: { agent: Agent; bid?: AgentBid; delay?: number }) {
+function AgentCard({ agent, bid, delay = 0, isActive = false }: { agent: Agent; bid?: AgentBid; delay?: number; isActive?: boolean }) {
   const color = STATUS_COLOR[agent.status] ?? "#475569";
   const isRunning = agent.status === "running";
   const isSelected = ["selected", "running", "done", "promoted", "penalized"].includes(agent.status);
@@ -69,7 +69,11 @@ function AgentCard({ agent, bid, delay = 0 }: { agent: Agent; bid?: AgentBid; de
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.35 }}
       className={`p-3 rounded border transition-all ${isRunning ? "agent-running" : ""}`}
-      style={{ borderColor: isSelected ? `${color}60` : "#1e293b", backgroundColor: isSelected ? `${color}08` : "#050505" }}
+      style={{
+        borderColor: isActive ? "#00ff88" : isSelected ? `${color}60` : "#1e293b",
+        backgroundColor: isActive ? "rgba(0,255,136,0.06)" : isSelected ? `${color}08` : "#050505",
+        boxShadow: isActive ? "0 0 12px rgba(0,255,136,0.15)" : undefined,
+      }}
     >
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
@@ -767,6 +771,12 @@ export default function DemoPage() {
   const [traceSummary, setTraceSummary] = useState<TraceSummary | null>(null);
   const [tracesLoading, setTracesLoading] = useState(false);
   const [sessionCost, setSessionCost] = useState(0);
+  const [streamBids, setStreamBids] = useState<AgentBid[]>([]);
+  const [streamDecisionLog, setStreamDecisionLog] = useState<MarketDecisionEntry[]>([]);
+  const [streamOutputs, setStreamOutputs] = useState<Record<string, string>>({});
+  const [streamScore, setStreamScore] = useState<EvalScore | null>(null);
+  const [streamRepChanges, setStreamRepChanges] = useState<ReputationChange[]>([]);
+  const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [recentMissions, setRecentMissions] = useState<MissionSummary[]>([]);
   const [totalMissions, setTotalMissions] = useState(0);
   const [marketFeed, setMarketFeed] = useState<MarketFeedEvent[]>([]);
@@ -851,52 +861,99 @@ export default function DemoPage() {
     setResult(null);
     setLiveMessages([]);
     setSelectedFastRun(null);
+    setStreamBids([]);
+    setStreamDecisionLog([]);
+    setStreamOutputs({});
+    setStreamScore(null);
+    setStreamRepChanges([]);
+    setActiveAgent(null);
+    setPhase("planning");
 
-    const phases: Phase[] = ["planning", "auction", "executing", "evaluating", "updating", "done"];
-    let pi = 0;
-    const advance = () => setPhase(phases[pi++]);
-
-    advance();
-    await new Promise((r) => setTimeout(r, 800));
-    await fetchAgentsRef.current();
-    advance();
-    await new Promise((r) => setTimeout(r, 600));
+    const handleStreamEvent = (event: StreamEvent) => {
+      switch (event.type) {
+        case "phase":
+          setPhase(event.phase as Phase);
+          break;
+        case "bid":
+          setStreamBids((prev) => [...prev, ...event.bids]);
+          setStreamDecisionLog((prev) => [...prev, event.decisionEntry]);
+          break;
+        case "swarm":
+          setLiveAgents((prev) => prev.map((a) => {
+            const updated = event.agents.find((x) => x.id === a.id);
+            return updated ? { ...a, status: updated.status } : a;
+          }));
+          break;
+        case "agent_start":
+          setActiveAgent(event.agentId);
+          setLiveAgents((prev) => prev.map((a) => a.id === event.agentId ? { ...a, status: "running" } : a));
+          break;
+        case "agent_done":
+          setActiveAgent(null);
+          setLiveAgents((prev) => prev.map((a) => a.id === event.agentId ? { ...a, status: "done" } : a));
+          setStreamOutputs((prev) => ({ ...prev, [event.taskType]: event.output }));
+          break;
+        case "score":
+          setStreamScore(event.evalScore);
+          break;
+        case "rep_change":
+          setLiveAgents((prev) => prev.map((a) => a.id === event.change.agentId
+            ? { ...a, status: event.change.delta > 0 ? "promoted" : "penalized" }
+            : a));
+          setStreamRepChanges((prev) => [...prev, event.change]);
+          break;
+        case "done": {
+          const data = event.result;
+          setResult(data);
+          setPhase("done");
+          setRunCount((c) => c + 1);
+          setWeaveCount((c) => c + (data.agentMessages?.length ?? 6));
+          if (data.runCost) setSessionCost((c) => c + data.runCost!.totalUSD);
+          void animateMessages(data.agentMessages ?? []);
+          void fetchAgentsRef.current();
+          void fetchTraces();
+          void fetchMarketMemory();
+          setTimeout(() => outputRef.current?.scrollIntoView({ behavior: "smooth" }), 300);
+          break;
+        }
+        case "error":
+          setError(event.message);
+          setPhase("idle");
+          break;
+      }
+    };
 
     try {
-      const res = await fetch("/api/mission", {
+      await fetchAgentsRef.current();
+      const res = await fetch("/api/mission/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mission, runNumber: runCount + 1 }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
-      advance();
-      await new Promise((r) => setTimeout(r, 400));
-      await fetchAgentsRef.current();
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      const data: MissionResult = await res.json();
-
-      advance();
-      void animateMessages(data.agentMessages ?? []);
-      await new Promise((r) => setTimeout(r, 500));
-      advance();
-      await new Promise((r) => setTimeout(r, 500));
-
-      setResult(data);
-      setRunCount((c) => c + 1);
-      setWeaveCount((c) => c + (data.agentMessages?.length ?? 6));
-      if (data.runCost) setSessionCost((c) => c + data.runCost!.totalUSD);
-      advance();
-      setPhase("done");
-      await fetchAgentsRef.current();
-      void fetchTraces();
-      void fetchMarketMemory();
-      setTimeout(() => outputRef.current?.scrollIntoView({ behavior: "smooth" }), 300);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.trim().split("\n").find((l) => l.startsWith("data: "));
+          if (!line) continue;
+          try { handleStreamEvent(JSON.parse(line.slice(6)) as StreamEvent); } catch {}
+        }
+      }
     } catch (err) {
       setError(String(err));
       setPhase("idle");
     } finally {
       setLoading(false);
+      setActiveAgent(null);
     }
   };
 
@@ -954,6 +1011,12 @@ export default function DemoPage() {
     ? fastDemoResults.find((r) => r.runNumber === selectedFastRun) ?? result
     : result;
 
+  // Live stream state falls back to result when complete
+  const liveBids = displayResult?.bids ?? streamBids;
+  const liveDecisionLog = displayResult?.marketDecisionLog ?? streamDecisionLog;
+  const liveRepChanges = displayResult?.reputationChanges ?? streamRepChanges;
+  const liveScore = displayResult?.evalScore ?? streamScore;
+
   return (
     <div className="min-h-screen bg-black grid-bg font-mono">
       {/* Nav */}
@@ -986,6 +1049,7 @@ export default function DemoPage() {
             </div>
             <span className="text-slate-500">math engine</span>
           </div>
+          <Link href="/leaderboard" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">leaderboard</Link>
           <Link href="/benchmark" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">benchmarks</Link>
           <Link href="/architecture" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">architecture</Link>
           <button onClick={resetDemo} className="text-xs text-red-700 hover:text-red-500 transition-colors">reset</button>
@@ -1102,7 +1166,7 @@ export default function DemoPage() {
               <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">Agent Registry</div>
               <div className="space-y-2">
                 {liveAgents.map((agent, i) => (
-                  <AgentCard key={agent.id} agent={agent} bid={bidsByAgent[agent.id]} delay={i * 0.04} />
+                  <AgentCard key={agent.id} agent={agent} bid={bidsByAgent[agent.id]} delay={i * 0.04} isActive={activeAgent === agent.id} />
                 ))}
               </div>
             </div>
@@ -1110,17 +1174,39 @@ export default function DemoPage() {
 
           {/* Center: auction + messages + output + math */}
           <div className="md:col-span-1 lg:col-span-1 xl:col-span-2 space-y-4">
-            {displayResult && (
+            {liveBids.length > 0 && (
               <div className="terminal-card p-4">
                 <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">⚖️ Agent Auction — Vickrey-Inspired</div>
-                <AuctionLog bids={displayResult.bids} />
+                <AuctionLog bids={liveBids} />
               </div>
             )}
 
-            {displayResult && displayResult.marketDecisionLog && displayResult.marketDecisionLog.length > 0 && (
+            {liveDecisionLog.length > 0 && (
               <div className="terminal-card p-4">
                 <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">🧠 MarketMaker Decision Log</div>
-                <MarketDecisionLog log={displayResult.marketDecisionLog} />
+                <MarketDecisionLog log={liveDecisionLog} />
+              </div>
+            )}
+
+            {/* Live agent output stream — shown while streaming, before final result */}
+            {!displayResult && Object.keys(streamOutputs).length > 0 && (
+              <div className="terminal-card p-4">
+                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">
+                  ⚡ Live Agent Outputs
+                  {activeAgent && (
+                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.8, repeat: Infinity }}
+                      className="ml-2 text-green-400">● {activeAgent} running…</motion.span>
+                  )}
+                </div>
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {Object.entries(streamOutputs).map(([taskType, output]) => (
+                    <motion.div key={taskType} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                      className="border border-slate-900 rounded p-3">
+                      <div className="text-xs font-mono text-slate-600 uppercase tracking-wider mb-1">{taskType.replace(/_/g, " ")}</div>
+                      <p className="text-xs text-slate-400 leading-relaxed line-clamp-4">{output}</p>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1256,17 +1342,17 @@ export default function DemoPage() {
               <Leaderboard agents={liveAgents} />
             </div>
 
-            {displayResult && (
+            {liveScore && (
               <div className="terminal-card p-4">
                 <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">📊 Eval Score</div>
-                <ScorePanel score={displayResult.evalScore} runNum={displayResult.runNumber} improvement={displayResult.improvementFromPrevious} runCost={displayResult.runCost} weaveTraceUrl={displayResult.weaveTraceUrl} />
+                <ScorePanel score={liveScore} runNum={displayResult?.runNumber ?? runCount + 1} improvement={displayResult?.improvementFromPrevious} runCost={displayResult?.runCost} weaveTraceUrl={displayResult?.weaveTraceUrl} />
               </div>
             )}
 
-            {displayResult && displayResult.reputationChanges.length > 0 && (
+            {liveRepChanges.length > 0 && (
               <div className="terminal-card p-4">
                 <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">📈 Reputation Updates</div>
-                <ReputationLog changes={displayResult.reputationChanges} />
+                <ReputationLog changes={liveRepChanges} />
               </div>
             )}
 

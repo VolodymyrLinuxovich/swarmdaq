@@ -195,3 +195,15 @@ export interface MathSnapshot {
   swarmPortfolio: SwarmPortfolio;
   pairwiseProbabilities: Array<{ a: string; b: string; pABeatsB: number; dimension: string }>;
 }
+
+export type StreamEvent =
+  | { type: "phase"; phase: string }
+  | { type: "tasks"; tasks: Task[] }
+  | { type: "bid"; taskType: string; winnerName: string; bids: AgentBid[]; decisionEntry: MarketDecisionEntry }
+  | { type: "swarm"; agents: Agent[] }
+  | { type: "agent_start"; agentId: string; agentName: string; taskType: string }
+  | { type: "agent_done"; agentId: string; agentName: string; taskType: string; output: string }
+  | { type: "score"; evalScore: EvalScore }
+  | { type: "rep_change"; change: ReputationChange }
+  | { type: "done"; result: MissionResult }
+  | { type: "error"; message: string };
