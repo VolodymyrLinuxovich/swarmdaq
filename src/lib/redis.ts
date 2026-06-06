@@ -28,6 +28,14 @@ export const KEY = {
   missionEvents:    (id: string) => `swarmdaq:events:${id}`,
   marketFeed:       "swarmdaq:market:feed",
   customAgentsList: "swarmdaq:custom_agents",
+
+  // ── T-Digest sketches (Redis Stack / RedisBloom required) ─────────────────
+  tdScoreOverall:    "swarmdaq:td:score:overall",
+  tdScoreDimension:  (dim: string) => `swarmdaq:td:score:${dim}`,
+  tdAgentScore:      (agentId: string) => `swarmdaq:td:agent:${agentId}:score`,
+  tdAgentDelta:      (agentId: string) => `swarmdaq:td:agent:${agentId}:delta`,
+  tdLatencyGlobal:   "swarmdaq:td:latency:global",
+  tdLatencyModel:    (model: string) => `swarmdaq:td:latency:model:${model}`,
 } as const;
 
 export type RedisKey = (typeof KEY)[keyof typeof KEY];

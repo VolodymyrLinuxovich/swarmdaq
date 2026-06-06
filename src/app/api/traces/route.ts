@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { KEY } from "@/lib/redis";
+import { addTDigestValues, getTDigestQuantiles } from "@/lib/tdigest";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
@@ -21,6 +23,10 @@ export interface TraceSummary {
   totalOutputTokens: number;
   avgLatencyMs: number;
   calls: WeaveCall[];
+  latencyP50Ms?: number;
+  latencyP90Ms?: number;
+  latencyP95Ms?: number;
+  latencyP99Ms?: number;
 }
 
 function parseTokens(summary: Record<string, unknown>): { input: number; output: number; model: string } {
@@ -114,12 +120,36 @@ export async function GET() {
     const latencies = calls.filter((c) => c.latencyMs > 0).map((c) => c.latencyMs);
     const avgLatencyMs = latencies.length > 0 ? Math.round(latencies.reduce((s, v) => s + v, 0) / latencies.length) : 0;
 
+    // Fire-and-forget: record latencies into t-digest sketches
+    if (latencies.length > 0) {
+      void addTDigestValues(KEY.tdLatencyGlobal, latencies).catch(() => {});
+      const byModel = new Map<string, number[]>();
+      for (const c of calls) {
+        if (c.latencyMs <= 0) continue;
+        const bucket = byModel.get(c.model) ?? [];
+        bucket.push(c.latencyMs);
+        byModel.set(c.model, bucket);
+      }
+      for (const [model, vals] of byModel) {
+        void addTDigestValues(KEY.tdLatencyModel(model), vals).catch(() => {});
+      }
+    }
+
+    // Query stored latency percentiles (from all historical calls, not just this batch)
+    const latencyQ = await getTDigestQuantiles(KEY.tdLatencyGlobal, [0.5, 0.9, 0.95, 0.99]);
+
     const summary: TraceSummary = {
       totalCalls: calls.length,
       totalInputTokens,
       totalOutputTokens,
       avgLatencyMs,
       calls: calls.slice(0, 10),
+      ...(latencyQ && {
+        latencyP50Ms: Math.round(latencyQ[0]),
+        latencyP90Ms: Math.round(latencyQ[1]),
+        latencyP95Ms: Math.round(latencyQ[2]),
+        latencyP99Ms: Math.round(latencyQ[3]),
+      }),
     };
 
     return NextResponse.json(summary);

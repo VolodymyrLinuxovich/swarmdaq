@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import type { MissionResult } from "@/lib/types";
+import type { AnalyticsResponse } from "@/app/api/analytics/route";
 
 const BENCHMARKS = [
   {
@@ -82,6 +83,14 @@ export default function BenchmarkPage() {
   const [results, setResults] = useState<BenchmarkResult[]>([]);
   const [running, setRunning] = useState(false);
   const [totalCost, setTotalCost] = useState(0);
+  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
+
+  useEffect(() => {
+    fetch("/api/analytics")
+      .then((r) => r.ok ? r.json() as Promise<AnalyticsResponse> : null)
+      .then((data) => { if (data?.available) setAnalytics(data); })
+      .catch(() => {});
+  }, []);
 
   const setStatus = (id: string, s: BenchmarkStatus) =>
     setStatuses((prev) => ({ ...prev, [id]: s }));
@@ -247,6 +256,28 @@ export default function BenchmarkPage() {
             );
           })}
         </div>
+
+        {/* Historical analytics context — shown when t-digest data is available */}
+        {analytics?.available && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+            className="terminal-card p-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs font-mono">
+            <span className="text-slate-600 uppercase tracking-wider">all-time percentiles</span>
+            {analytics.scoreOverall && (
+              <>
+                <span className="text-slate-600">overall p50 <span className="text-fuchsia-400 font-bold">{analytics.scoreOverall.p50}</span></span>
+                <span className="text-slate-600">p90 <span className="text-fuchsia-400 font-bold">{analytics.scoreOverall.p90}</span></span>
+                <span className="text-slate-600">p95 <span className="text-fuchsia-300 font-bold">{analytics.scoreOverall.p95}</span></span>
+              </>
+            )}
+            {analytics.latency && (
+              <>
+                <span className="text-slate-800">|</span>
+                <span className="text-slate-600">latency p50 <span className="text-amber-500">{analytics.latency.p50}ms</span></span>
+                <span className="text-slate-600">p95 <span className="text-amber-400 font-bold">{analytics.latency.p95}ms</span></span>
+              </>
+            )}
+          </motion.div>
+        )}
 
         {/* Summary table — shown when all done */}
         {allDone && results.length === 5 && (

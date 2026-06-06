@@ -618,6 +618,14 @@ function WeaveTracePanel({ traces, loading }: { traces: TraceSummary | null; loa
             <span className="text-green-400">{traces.totalOutputTokens.toLocaleString()}</span>
             <span className="text-slate-600">avg latency</span>
             <span className="text-amber-400">{traces.avgLatencyMs}ms</span>
+            {traces.latencyP50Ms !== undefined && (
+              <>
+                <span className="text-slate-700">p50 latency</span>
+                <span className="text-slate-500">{traces.latencyP50Ms}ms</span>
+                <span className="text-slate-700">p95 latency</span>
+                <span className="text-slate-500">{traces.latencyP95Ms}ms</span>
+              </>
+            )}
           </div>
           <div className="space-y-1">
             {traces.calls.slice(0, 6).map((c, i) => (

@@ -15,6 +15,7 @@
 
 import { redis, KEY } from "./redis";
 import type { MissionResult, Agent } from "./types";
+import { addTDigestValue } from "./tdigest";
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -145,6 +146,19 @@ export async function storeMission(result: MissionResult): Promise<void> {
         // keep index to 50 entries
         redis.zremrangebyrank(KEY.missionsIndex, 0, -51),
       ]);
+
+      // Fire-and-forget t-digest analytics — never blocks or throws
+      const s = result.evalScore;
+      void Promise.all([
+        addTDigestValue(KEY.tdScoreOverall, s.overall),
+        addTDigestValue(KEY.tdScoreDimension("quality"), s.quality),
+        addTDigestValue(KEY.tdScoreDimension("factuality"), s.factuality),
+        addTDigestValue(KEY.tdScoreDimension("usefulness"), s.usefulness),
+        addTDigestValue(KEY.tdScoreDimension("specificity"), s.specificity),
+        addTDigestValue(KEY.tdScoreDimension("actionability"), s.actionability),
+        addTDigestValue(KEY.tdScoreDimension("collaboration"), s.collaboration),
+      ]).catch(() => {});
+
       return;
     } catch (e) { console.error("[redis] storeMission:", e); }
   }
@@ -221,6 +235,13 @@ export async function appendAgentHistory(agentId: string, entry: AgentHistoryEnt
     try {
       await redis.lpush(KEY.agentHistory(agentId), str);
       await redis.ltrim(KEY.agentHistory(agentId), 0, 19); // keep last 20
+
+      // Fire-and-forget t-digest analytics — never blocks or throws
+      void Promise.all([
+        addTDigestValue(KEY.tdAgentScore(agentId), entry.score),
+        addTDigestValue(KEY.tdAgentDelta(agentId), entry.delta),
+      ]).catch(() => {});
+
       return;
     } catch (e) { console.error("[redis] appendAgentHistory:", e); }
   }
