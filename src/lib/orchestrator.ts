@@ -19,6 +19,12 @@ import {
   getTotalAgentRuns,
   getRunCount,
 } from "./memory";
+import {
+  appendMissionEvent,
+  appendMarketFeed,
+  appendAgentHistory,
+  storeMission,
+} from "./marketHistory";
 import { generateAgentOutput, planMissionTasks, resetTokenAccumulator, getTokenAccumulator } from "./gemini";
 import { TASKS } from "./agents";
 import { getAgentMessages } from "./messages";
@@ -192,6 +198,8 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
   const lastMission = await getLastMission();
 
   await traceEvent({ type: "mission_received", data: { missionId, mission, runNum } });
+  await appendMissionEvent({ eventType: "mission_received", missionId, runNumber: runNum, timestamp: Date.now(), message: `Mission received: "${mission.slice(0, 80)}"` });
+  await appendMarketFeed({ timestamp: Date.now(), eventType: "mission_started", text: `Run #${runNum} started: "${mission.slice(0, 60)}"`, color: "#00aaff" });
 
   // Mark planner as running
   await updateAgent("planner", { status: "running" });
@@ -244,6 +252,7 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
     type: "select_swarm",
     data: { selectedAgents: selectedAgents.map((a) => a.name) },
   });
+  await appendMissionEvent({ eventType: "swarm_selected", missionId, runNumber: runNum, timestamp: Date.now(), message: `Swarm selected: ${selectedAgents.map((a) => a.name).join(", ")}` });
 
   // Execution phase
   const outputs: Record<string, string> = {};
@@ -257,6 +266,7 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
 
     await updateAgent(agent.id, { status: "running" });
     await traceEvent({ type: "run_agent", data: { agentId: agent.id, task: task.type } });
+    await appendMissionEvent({ eventType: "agent_started", missionId, runNumber: runNum, timestamp: Date.now(), agentId: agent.id, agentName: agent.name, message: `${agent.name} started task: ${task.type}` });
 
     const output = await generateAgentOutput({
       agentName: agent.name,
@@ -270,6 +280,7 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
     task.output = output;
     task.status = "done";
     await updateAgent(agent.id, { status: "done" });
+    await appendMissionEvent({ eventType: "agent_completed", missionId, runNumber: runNum, timestamp: Date.now(), agentId: agent.id, agentName: agent.name, message: `${agent.name} completed task: ${task.type}` });
   }
 
   // Evaluation
@@ -369,6 +380,28 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
       alphaDelta: bayesian.alpha - agent.alpha,
       betaDelta: bayesian.beta - agent.beta,
     });
+
+    // Market feed + agent history
+    const labelColors: Record<string, string> = { promoted: "#00ff88", penalized: "#ef4444", done: "#fbbf24" };
+    const feedEventType = upd.delta > 0 ? "agent_promoted" as const : upd.delta < 0 ? "agent_penalized" as const : "reputation_update" as const;
+    await appendMarketFeed({
+      timestamp: Date.now(),
+      agentId: upd.id,
+      agentName: agent.name,
+      eventType: feedEventType,
+      text: `${agent.name} ${upd.delta > 0 ? "▲" : upd.delta < 0 ? "▼" : "─"} ${upd.delta > 0 ? "+" : ""}${upd.delta} rep | ${upd.reason.slice(0, 60)}`,
+      delta: upd.delta,
+      color: upd.delta > 0 ? labelColors.promoted : upd.delta < 0 ? labelColors.penalized : labelColors.done,
+    });
+    await appendAgentHistory(upd.id, {
+      missionId,
+      runNumber: runNum,
+      score: evalScore.overall,
+      delta: upd.delta,
+      timestamp: Date.now(),
+      role: agent.role,
+    });
+    await appendMissionEvent({ eventType: "reputation_updated", missionId, runNumber: runNum, timestamp: Date.now(), agentId: upd.id, agentName: agent.name, delta: upd.delta, score: evalScore.overall, message: `Rep ${upd.delta > 0 ? "+" : ""}${upd.delta}: ${upd.reason}` });
   }
 
   if (runNum >= 2) {
@@ -528,6 +561,9 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
   };
 
   await recordMission(result);
+  await storeMission(result);
+  await appendMissionEvent({ eventType: "mission_completed", missionId, runNumber: runNum, timestamp: Date.now(), score: evalScore.overall, message: `Mission complete — score ${evalScore.overall}/100` });
+  await appendMarketFeed({ timestamp: Date.now(), eventType: "mission_complete", text: `Run #${runNum} complete — score ${evalScore.overall}/100. Swarm: ${selectedAgents.map((a) => a.name).join(", ")}`, color: evalScore.overall >= 90 ? "#00ff88" : evalScore.overall >= 80 ? "#fbbf24" : "#ef4444" });
 
   return result;
 }

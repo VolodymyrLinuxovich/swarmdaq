@@ -3,8 +3,12 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useCopilotReadable } from "@copilotkit/react-core";
 import type { MissionResult, Agent, AgentBid, ReputationChange, ShapleyContribution, AgentMessage, MarketDecisionEntry } from "@/lib/types";
+import { AGENT_PROVIDER, PROVIDER_COLORS } from "@/lib/providers-config";
 import type { TraceSummary } from "@/app/api/traces/route";
+import { getAgentLabel } from "@/components/copilot/WeakAgentCard";
+import type { MissionSummary, MarketFeedEvent, MissionEvent } from "@/lib/marketHistory";
 
 const DEFAULT_MISSION =
   "Build a launch plan for an AI product that helps students turn messy research into a demo-ready hackathon project. Include market positioning, landing page copy, risk analysis, and a 90-second pitch.";
@@ -71,6 +75,12 @@ function AgentCard({ agent, bid, delay = 0 }: { agent: Agent; bid?: AgentBid; de
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />
           <span className="text-xs font-bold text-slate-200">{agent.name}</span>
+          {agent.provider && agent.provider !== "gemini" && (
+            <span className="text-xs font-mono px-1 rounded"
+              style={{ color: agent.provider === "anthropic" ? "#f97316" : "#00ff88", backgroundColor: agent.provider === "anthropic" ? "rgba(249,115,22,0.1)" : "rgba(0,255,136,0.08)", border: `1px solid ${agent.provider === "anthropic" ? "rgba(249,115,22,0.3)" : "rgba(0,255,136,0.2)"}` }}>
+              {agent.provider === "anthropic" ? "claude" : "gpt-4o"}
+            </span>
+          )}
         </div>
         <span className="text-xs font-mono" style={{ color }}>{STATUS_LABEL[agent.status]}</span>
       </div>
@@ -562,6 +572,7 @@ function MarketDecisionLog({ log }: { log: MarketDecisionEntry[] }) {
                   <div className="flex items-center gap-2">
                     <span className="w-4 text-slate-700">{i + 1}.</span>
                     <span className={i === 0 ? "text-green-400 font-bold" : "text-slate-500"}>{c.agentName}</span>
+                    {(() => { const p = AGENT_PROVIDER[c.agentId]; return p && p !== "gemini" ? <span className="text-xs px-1 rounded" style={{ color: PROVIDER_COLORS[p], backgroundColor: `${PROVIDER_COLORS[p]}18`, border: `1px solid ${PROVIDER_COLORS[p]}40` }}>{p === "anthropic" ? "claude" : "gpt-4o"}</span> : null; })()}
                     <span className="ml-auto font-bold" style={{ color: i === 0 ? "#00ff88" : "#475569" }}>{c.compositeScore.toFixed(4)}</span>
                   </div>
                   <div className="flex gap-3 pl-6 text-slate-800">
@@ -685,6 +696,50 @@ function ComparisonView({ run1, run4 }: { run1: MissionResult; run4: MissionResu
   );
 }
 
+// ── Live Agent Ticker ─────────────────────────────────────────────────────────
+
+function LiveTicker({ agents, reputationChanges }: { agents: Agent[]; reputationChanges?: MissionResult["reputationChanges"] }) {
+  const labelColors: Record<string, string> = { BUY: "#00ff88", HOLD: "#fbbf24", SELL: "#ef4444", WATCH: "#00aaff" };
+
+  // Build a flat list of alternating [label, delta] tokens
+  const tokens: Array<{ text: string; color: string; bold?: boolean }> = [];
+  for (const a of agents) {
+    const change = reputationChanges?.find((c) => c.agentId === a.id);
+    const label = getAgentLabel(a);
+    const lc = labelColors[label];
+
+    // label chip
+    tokens.push({ text: label, color: lc, bold: true });
+
+    // delta only if there was a change
+    if (change && change.delta !== 0) {
+      const deltaText = change.delta > 0 ? `▲ +${change.delta}` : `▼ ${change.delta}`;
+      const deltaColor = change.delta > 0 ? "#00ff88" : "#ef4444";
+      tokens.push({ text: deltaText, color: deltaColor, bold: true });
+    }
+
+    tokens.push({ text: "·", color: "#1e293b" });
+  }
+
+  const doubled = [...tokens, ...tokens];
+
+  return (
+    <div className="overflow-hidden border-t border-b border-green-900/30 py-1.5 bg-black/70">
+      <div className="ticker-inner">
+        {doubled.map((tok, i) => (
+          <span
+            key={i}
+            className="whitespace-nowrap text-xs font-mono px-2"
+            style={{ color: tok.color, fontWeight: tok.bold ? 700 : 400 }}
+          >
+            {tok.text}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Page types ───────────────────────────────────────────────────────────────
 
 type Phase = "idle" | "planning" | "auction" | "executing" | "evaluating" | "updating" | "done";
@@ -712,7 +767,27 @@ export default function DemoPage() {
   const [traceSummary, setTraceSummary] = useState<TraceSummary | null>(null);
   const [tracesLoading, setTracesLoading] = useState(false);
   const [sessionCost, setSessionCost] = useState(0);
+  const [recentMissions, setRecentMissions] = useState<MissionSummary[]>([]);
+  const [totalMissions, setTotalMissions] = useState(0);
+  const [marketFeed, setMarketFeed] = useState<MarketFeedEvent[]>([]);
+  const [replayMissionId, setReplayMissionId] = useState<string | null>(null);
+  const [replayMission, setReplayMission] = useState<MissionResult | null>(null);
+  const [replayEvents, setReplayEvents] = useState<MissionEvent[]>([]);
   const outputRef = useRef<HTMLDivElement>(null);
+
+  // ── Expose state to CopilotKit ──────────────────────────────────────────
+  useCopilotReadable({
+    description: "Live SwarmDAQ agent registry with current reputation, Elo, Bayesian mean, uncertainty, and market labels",
+    value: liveAgents,
+  });
+  useCopilotReadable({
+    description: "Last completed mission result including swarm selection, bids, evaluation scores, reputation changes, and improvement data",
+    value: result,
+  });
+  useCopilotReadable({
+    description: "Demo session state",
+    value: { runCount, sessionCost, currentMission: mission, phase, fastDemoResults: fastDemoResults.map((r) => ({ runNumber: r.runNumber, overall: r.evalScore.overall })) },
+  });
 
   const fetchTraces = async () => {
     setTracesLoading(true);
@@ -723,6 +798,35 @@ export default function DemoPage() {
     setTracesLoading(false);
   };
 
+  const fetchMarketMemory = async () => {
+    try {
+      const [histRes, feedRes] = await Promise.all([
+        fetch("/api/history?limit=8"),
+        fetch("/api/market-feed?limit=12"),
+      ]);
+      if (histRes.ok) {
+        const { missions, total } = await histRes.json() as { missions: MissionSummary[]; total: number };
+        setRecentMissions(missions);
+        setTotalMissions(total);
+      }
+      if (feedRes.ok) {
+        const { events } = await feedRes.json() as { events: MarketFeedEvent[] };
+        setMarketFeed(events);
+      }
+    } catch {}
+  };
+
+  const selectReplay = async (missionId: string) => {
+    if (replayMissionId === missionId) { setReplayMissionId(null); setReplayMission(null); setReplayEvents([]); return; }
+    setReplayMissionId(missionId);
+    try {
+      const res = await fetch(`/api/history/${missionId}`);
+      const { mission, events } = await res.json() as { mission: MissionResult; events: MissionEvent[] };
+      setReplayMission(mission);
+      setReplayEvents(events);
+    } catch {}
+  };
+
   const fetchAgentsRef = useRef(async () => {
     try {
       const res = await fetch("/api/agents");
@@ -731,7 +835,7 @@ export default function DemoPage() {
     } catch {}
   });
 
-  useEffect(() => { void fetchAgentsRef.current(); }, []);
+  useEffect(() => { void fetchAgentsRef.current(); void fetchMarketMemory(); }, []);
 
   const animateMessages = async (messages: AgentMessage[]) => {
     for (const msg of messages) {
@@ -786,6 +890,7 @@ export default function DemoPage() {
       setPhase("done");
       await fetchAgentsRef.current();
       void fetchTraces();
+      void fetchMarketMemory();
       setTimeout(() => outputRef.current?.scrollIntoView({ behavior: "smooth" }), 300);
     } catch (err) {
       setError(String(err));
@@ -830,6 +935,7 @@ export default function DemoPage() {
     }
     await fetchAgentsRef.current();
     void fetchTraces();
+    void fetchMarketMemory();
     setFastDemoActive(false);
   };
 
@@ -911,6 +1017,11 @@ export default function DemoPage() {
           </div>
         )}
       </div>
+
+      {/* Live agent ticker */}
+      {liveAgents.length > 0 && (
+        <LiveTicker agents={liveAgents} reputationChanges={displayResult?.reputationChanges} />
+      )}
 
       {/* Fast demo timeline — shown when fast demo has results */}
       {fastDemoResults.length > 0 && (
@@ -1179,6 +1290,89 @@ export default function DemoPage() {
               </div>
               <WeaveTracePanel traces={traceSummary} loading={tracesLoading} />
             </div>
+
+            {/* Market Memory panel */}
+            <div className="terminal-card p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs text-slate-600 uppercase tracking-wider">🗄 Market Memory</span>
+                <span className="text-xs font-mono text-green-700 ml-1">{totalMissions > 0 ? `${totalMissions} missions` : ""}</span>
+                <button onClick={() => void fetchMarketMemory()} className="ml-auto text-xs text-slate-700 hover:text-slate-500 transition-colors">↺</button>
+              </div>
+              {marketFeed.length === 0 && totalMissions === 0 && (
+                <div className="text-xs font-mono text-slate-800">no history yet — run a mission first</div>
+              )}
+              {marketFeed.length > 0 && (
+                <div className="space-y-1.5 mb-3">
+                  {marketFeed.slice(0, 6).map((ev, i) => (
+                    <div key={i} className="text-xs font-mono leading-relaxed" style={{ color: ev.color ?? "#64748b" }}>{ev.text}</div>
+                  ))}
+                </div>
+              )}
+              {recentMissions.length > 0 && (
+                <div className="mt-3 border-t border-slate-900 pt-3">
+                  <div className="text-xs text-slate-700 uppercase tracking-wider mb-2">Recent Runs</div>
+                  {recentMissions.slice(0, 5).map((m) => {
+                    const color = m.overallScore >= 90 ? "#22d3ee" : m.overallScore >= 85 ? "#00ff88" : m.overallScore >= 80 ? "#fbbf24" : "#ef4444";
+                    return (
+                      <button key={m.missionId} onClick={() => void selectReplay(m.missionId)}
+                        className="w-full text-left flex items-center gap-2 py-1.5 border-b border-slate-900 last:border-0 hover:bg-slate-950/60 transition-colors px-1 rounded"
+                      >
+                        <span className="text-xs font-mono text-slate-600 w-10">#{m.runNumber}</span>
+                        <span className="text-xs font-mono flex-1 text-slate-500 truncate">{m.mission.slice(0, 45)}</span>
+                        <span className="text-xs font-mono font-bold" style={{ color }}>{m.overallScore}</span>
+                        <span className="text-slate-700 text-xs">{replayMissionId === m.missionId ? "▲" : "▼"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Mission Replay panel — shown when user selects a run */}
+            {replayMission && replayMissionId && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="terminal-card p-4">
+                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">
+                  ⏪ Replay — Run #{replayMission.runNumber}
+                </div>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {(["quality", "factuality", "actionability"] as const).map((k) => {
+                    const v = replayMission.evalScore[k];
+                    const c = v >= 88 ? "#00ff88" : v >= 75 ? "#fbbf24" : "#ef4444";
+                    return (
+                      <div key={k} className="text-center p-2 rounded border border-slate-900 bg-black/40">
+                        <div className="text-slate-700 text-xs font-mono">{k.slice(0, 5)}</div>
+                        <div className="text-lg font-black font-mono" style={{ color: c }}>{v}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="text-xs text-slate-700 uppercase tracking-wider mb-2">Event Timeline</div>
+                <div className="max-h-40 overflow-y-auto space-y-1.5 border-l-2 border-green-900/30 pl-3">
+                  {replayEvents.length === 0 && (
+                    <div className="text-xs font-mono text-slate-800">No events stored — run with Redis configured to capture events.</div>
+                  )}
+                  {replayEvents.map((ev, i) => {
+                    const c: Record<string, string> = { mission_received: "#00aaff", swarm_selected: "#00ff88", agent_started: "#475569", agent_completed: "#475569", reputation_updated: "#fbbf24", mission_completed: "#00ff88" };
+                    return (
+                      <div key={i} className="text-xs font-mono" style={{ color: c[ev.eventType] ?? "#64748b" }}>{ev.message}</div>
+                    );
+                  })}
+                </div>
+                {replayMission.reputationChanges.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-slate-900 space-y-1.5">
+                    <div className="text-xs text-slate-700 uppercase tracking-wider mb-1">Rep Outcome</div>
+                    {replayMission.reputationChanges.map((c) => (
+                      <div key={c.agentId} className="flex items-center gap-2 text-xs font-mono">
+                        <span className="flex-1 text-slate-500">{c.agentName}</span>
+                        <span className="font-bold" style={{ color: c.delta > 0 ? "#00ff88" : c.delta < 0 ? "#ef4444" : "#64748b" }}>
+                          {c.delta > 0 ? "+" : ""}{c.delta}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
           </div>
         </div>
       </div>

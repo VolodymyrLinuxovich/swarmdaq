@@ -11,6 +11,7 @@ export interface Agent {
   id: string;
   name: string;
   role: string;
+  provider?: "gemini" | "openai" | "anthropic";
   skills: string[];
   price: number;
   reputation: number;

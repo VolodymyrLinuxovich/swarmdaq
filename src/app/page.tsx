@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, useInView } from "framer-motion";
 import Link from "next/link";
+import { useCopilotReadable } from "@copilotkit/react-core";
+import { getAgentLabel } from "@/components/copilot/WeakAgentCard";
+import type { Agent } from "@/lib/types";
 
 const AGENTS = [
   { name: "SkepticAgent", rep: 93, delta: "+2", color: "#00ff88" },
@@ -16,16 +19,16 @@ const AGENTS = [
   { name: "ResearchAgent", rep: 78, delta: "-4", color: "#ef4444" },
 ];
 
-const TICKER_ITEMS = [
-  { text: "SkepticAgent", delta: "▲ +2", color: "#00ff88" },
-  { text: "SourceVerifierAgent", delta: "▲ +3", color: "#00ff88" },
-  { text: "ResearchAgent", delta: "▼ -4", color: "#ef4444" },
-  { text: "EvaluatorAgent", delta: "▲ +2", color: "#00ff88" },
-  { text: "PitchAgent", delta: "▲ +1", color: "#00ff88" },
-  { text: "MarketMakerAgent", delta: "▲ +1", color: "#00ff88" },
-  { text: "BuilderAgent", delta: "─ +0", color: "#64748b" },
-  { text: "PlannerAgent", delta: "─ +0", color: "#64748b" },
-  { text: "ReputationAgent", delta: "▲ +1", color: "#00ff88" },
+const TICKER_ITEMS_STATIC = [
+  { text: "SkepticAgent", delta: "▲ +2", color: "#00ff88", label: "BUY" },
+  { text: "SourceVerifier", delta: "▲ +3", color: "#00ff88", label: "BUY" },
+  { text: "ResearchAgent", delta: "▼ -4", color: "#ef4444", label: "SELL" },
+  { text: "EvaluatorAgent", delta: "▲ +2", color: "#00ff88", label: "BUY" },
+  { text: "PitchAgent", delta: "▲ +1", color: "#fbbf24", label: "HOLD" },
+  { text: "MarketMaker", delta: "▲ +1", color: "#00ff88", label: "BUY" },
+  { text: "BuilderAgent", delta: "─ +0", color: "#64748b", label: "HOLD" },
+  { text: "PlannerAgent", delta: "─ +0", color: "#64748b", label: "HOLD" },
+  { text: "ReputationAgent", delta: "▲ +1", color: "#00ff88", label: "BUY" },
 ];
 
 const FLOW_STEPS = [
@@ -65,18 +68,29 @@ function AnimatedCounter({ target, duration = 1200 }: { target: number; duration
   return <span ref={ref}>{count}</span>;
 }
 
-function Ticker() {
-  const items = [...TICKER_ITEMS, ...TICKER_ITEMS];
+function Ticker({ liveAgents }: { liveAgents?: Agent[] }) {
+  const labelColors: Record<string, string> = { BUY: "#00ff88", HOLD: "#fbbf24", SELL: "#ef4444", WATCH: "#00aaff" };
+  const source = liveAgents?.length
+    ? liveAgents.map((a) => {
+        const label = getAgentLabel(a);
+        return {
+          text: a.name.replace("Agent", ""),
+          delta: "─ live",
+          color: labelColors[label] ?? "#475569",
+          label,
+        };
+      })
+    : TICKER_ITEMS_STATIC;
+  const items = [...source, ...source];
   return (
     <div className="overflow-hidden border-t border-b border-green-900/40 py-2 bg-black/60">
-      <div className="ticker-inner gap-8 px-4">
+      <div className="ticker-inner gap-0">
         {items.map((item, i) => (
-          <span key={i} className="whitespace-nowrap text-xs font-mono px-4">
+          <span key={i} className="whitespace-nowrap text-xs font-mono px-4 flex items-center gap-1.5">
             <span className="text-slate-400">{item.text}</span>
-            <span className="ml-2 font-bold" style={{ color: item.color }}>
-              {item.delta}
-            </span>
-            <span className="text-slate-600 mx-4">|</span>
+            <span className="font-bold" style={{ color: item.color }}>{item.delta}</span>
+            <span className="font-bold text-xs" style={{ color: item.color }}>{item.label}</span>
+            <span className="text-slate-700 ml-3">|</span>
           </span>
         ))}
       </div>
@@ -181,6 +195,7 @@ function SectionLabel({ label }: { label: string }) {
 
 export default function LandingPage() {
   const [activeStep, setActiveStep] = useState(0);
+  const [liveAgents, setLiveAgents] = useState<Agent[]>([]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -188,6 +203,15 @@ export default function LandingPage() {
     }, 1200);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    fetch("/api/agents").then((r) => r.json()).then((d) => setLiveAgents(d.agents ?? [])).catch(() => {});
+  }, []);
+
+  useCopilotReadable({
+    description: "User is on the SwarmDAQ landing page. The demo is at /demo. Agent market is live.",
+    value: "Landing page. Direct user to /demo to run missions.",
+  });
 
   return (
     <div className="min-h-screen bg-black grid-bg">
@@ -212,7 +236,7 @@ export default function LandingPage() {
 
       {/* Ticker */}
       <div className="pt-16">
-        <Ticker />
+        <Ticker liveAgents={liveAgents} />
       </div>
 
       {/* HERO */}
@@ -514,72 +538,46 @@ export default function LandingPage() {
             SwarmDAQ is powered by auction theory, bandit learning, Bayesian reputation, graph trust, and portfolio optimization.
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
               {
-                title: "UCB1 Bandit Routing",
-                formula: "UCB = μ + c·√(ln N / nᵢ)",
-                desc: "Balances exploration and exploitation. Under-tested agents get chances.",
+                label: "MARKET",
+                title: "Auction + Bandit",
+                lines: ["Vickrey-inspired bidding", "UCB1 exploration bonus", "Elo pairwise duels"],
                 color: "#00ff88",
               },
               {
-                title: "Bayesian Beta Reputation",
-                formula: "Trust ~ Beta(α, β)\nE[trust] = α / (α+β)",
-                desc: "Uncertainty shrinks as agents prove themselves. New agents get explored.",
+                label: "TRUST",
+                title: "Bayesian + Graph",
+                lines: ["Beta reputation per agent", "Uncertainty shrinks with runs", "PageRank collaboration score"],
                 color: "#00aaff",
               },
               {
-                title: "Vickrey-Inspired Auction",
-                formula: "utility = 0.4·quality + 0.25·conf − 0.1·cost",
-                desc: "Truth-telling mechanism. Winner pays clearing price of second-best bid.",
-                color: "#a855f7",
-              },
-              {
-                title: "Elo + Bradley-Terry",
-                formula: "E[A] = 1/(1+10^((Rb-Ra)/400))\nP(A>B) = exp(Ra) / (exp(Ra)+exp(Rb))",
-                desc: "Pairwise agent duel ratings. Expected win probabilities between agents.",
-                color: "#fbbf24",
-              },
-              {
-                title: "Markowitz Swarm Portfolio",
-                formula: "max E[return] − λ·risk − μ·cost + synergy",
-                desc: "Treats the swarm as a portfolio. Penalizes risky, expensive combinations.",
-                color: "#00ff88",
-              },
-              {
-                title: "Shapley Contribution Ledger",
-                formula: "φ(i) ≈ score(S) − score(S\\{i})",
-                desc: "Assigns credit/blame via leave-one-out approximation. Answers: who made the swarm better?",
-                color: "#00aaff",
-              },
-              {
-                title: "PageRank Trust Graph",
-                formula: "PR(i) = (1-d)/N + d·Σ(PR(j)/out(j))",
-                desc: "Agents that improve collaboration hubs gain trust centrality.",
+                label: "PORTFOLIO",
+                title: "Swarm Optimization",
+                lines: ["Markowitz return vs risk", "Shapley credit attribution", "Synergy bonus for proven pairs"],
                 color: "#a855f7",
               },
             ].map((m, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, scale: 0.97 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                transition={{ delay: i * 0.06 }}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08 }}
                 viewport={{ once: true }}
-                className="p-5 rounded border bg-black/80 hover:bg-black transition-colors"
-                style={{ borderColor: `${m.color}33` }}
+                className="p-6 rounded border bg-black/80 hover:bg-black/60 transition-colors"
+                style={{ borderColor: `${m.color}30` }}
               >
-                <h3 className="font-bold text-sm mb-2" style={{ color: m.color }}>{m.title}</h3>
-                <div
-                  className="font-mono text-xs p-2 rounded mb-3 whitespace-pre"
-                  style={{
-                    backgroundColor: `${m.color}08`,
-                    color: m.color,
-                    borderLeft: `2px solid ${m.color}`,
-                  }}
-                >
-                  {m.formula}
-                </div>
-                <p className="text-xs text-slate-500 leading-relaxed">{m.desc}</p>
+                <div className="text-xs font-mono font-bold mb-3 tracking-widest" style={{ color: `${m.color}88` }}>{m.label}</div>
+                <h3 className="text-xl font-black mb-4" style={{ color: m.color }}>{m.title}</h3>
+                <ul className="space-y-2">
+                  {m.lines.map((line, j) => (
+                    <li key={j} className="flex items-start gap-2 text-sm text-slate-400">
+                      <span className="mt-1.5 w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
+                      {line}
+                    </li>
+                  ))}
+                </ul>
               </motion.div>
             ))}
           </div>

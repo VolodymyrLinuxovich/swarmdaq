@@ -1,7 +1,13 @@
 import { Agent } from "./types";
+import { AGENT_PROVIDER } from "./providers-config";
+
+const withProvider = (agent: Omit<Agent, "provider">): Agent => ({
+  ...agent,
+  provider: AGENT_PROVIDER[agent.id] ?? "gemini",
+});
 
 export const DEFAULT_AGENTS: Agent[] = [
-  {
+  withProvider({
     id: "planner",
     name: "PlannerAgent",
     role: "Decomposes missions into structured subtask graphs",
@@ -24,8 +30,8 @@ export const DEFAULT_AGENTS: Agent[] = [
     ucbScore: 0,
     graphTrust: 0.75,
     bayesianMean: 0.8,
-  },
-  {
+  }),
+  withProvider({
     id: "research",
     name: "ResearchAgent",
     role: "Conducts market research and competitive analysis",
@@ -48,8 +54,8 @@ export const DEFAULT_AGENTS: Agent[] = [
     ucbScore: 0,
     graphTrust: 0.55,
     bayesianMean: 0.56,
-  },
-  {
+  }),
+  withProvider({
     id: "source_verifier",
     name: "SourceVerifierAgent",
     role: "Verifies claims and validates sources for factual accuracy",
@@ -72,8 +78,8 @@ export const DEFAULT_AGENTS: Agent[] = [
     ucbScore: 0,
     graphTrust: 0.88,
     bayesianMean: 0.82,
-  },
-  {
+  }),
+  withProvider({
     id: "builder",
     name: "BuilderAgent",
     role: "Synthesizes research into actionable product specs",
@@ -96,8 +102,8 @@ export const DEFAULT_AGENTS: Agent[] = [
     ucbScore: 0,
     graphTrust: 0.68,
     bayesianMean: 0.70,
-  },
-  {
+  }),
+  withProvider({
     id: "pitch",
     name: "PitchAgent",
     role: "Crafts compelling narratives and pitch scripts",
@@ -120,8 +126,8 @@ export const DEFAULT_AGENTS: Agent[] = [
     ucbScore: 0,
     graphTrust: 0.72,
     bayesianMean: 0.80,
-  },
-  {
+  }),
+  withProvider({
     id: "skeptic",
     name: "SkepticAgent",
     role: "Challenges assumptions and surfaces critical risks",
@@ -144,8 +150,8 @@ export const DEFAULT_AGENTS: Agent[] = [
     ucbScore: 0,
     graphTrust: 0.82,
     bayesianMean: 0.90,
-  },
-  {
+  }),
+  withProvider({
     id: "evaluator",
     name: "EvaluatorAgent",
     role: "Scores agent outputs on quality, factuality, and usefulness",
@@ -168,8 +174,8 @@ export const DEFAULT_AGENTS: Agent[] = [
     ucbScore: 0,
     graphTrust: 0.80,
     bayesianMean: 0.82,
-  },
-  {
+  }),
+  withProvider({
     id: "market_maker",
     name: "MarketMakerAgent",
     role: "Orchestrates auctions and selects optimal agent swarms",
@@ -192,8 +198,8 @@ export const DEFAULT_AGENTS: Agent[] = [
     ucbScore: 0,
     graphTrust: 0.85,
     bayesianMean: 0.82,
-  },
-  {
+  }),
+  withProvider({
     id: "reputation",
     name: "ReputationAgent",
     role: "Updates agent reputation scores after each mission",
@@ -216,7 +222,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     ucbScore: 0,
     graphTrust: 0.78,
     bayesianMean: 0.80,
-  },
+  }),
 ];
 
 export const TASKS = [

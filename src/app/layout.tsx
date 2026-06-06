@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { CopilotProvider } from "./copilot-provider";
 
 const mono = JetBrains_Mono({
   subsets: ["latin"],
@@ -27,7 +28,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${mono.variable} h-full`}>
       <body className="min-h-full flex flex-col bg-black text-slate-200 antialiased">
-        {children}
+        <CopilotProvider>
+          {children}
+        </CopilotProvider>
       </body>
     </html>
   );

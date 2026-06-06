@@ -1,4 +1,5 @@
 import { traceLLMCall } from "./trace";
+import { AGENT_PROVIDER, generateWithOpenAI, generateWithAnthropic } from "./providers";
 
 // ── Per-mission token accumulator ────────────────────────────────────────────
 // Server-side, single-request scope. Reset at start of each mission.
@@ -495,8 +496,10 @@ export async function generateAgentOutput({
   context,
   jsonMode: _unusedJsonMode = false, // eslint-disable-line @typescript-eslint/no-unused-vars
 }: GenerateParams): Promise<string> {
-  const apiKey =
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
+  // Resolve which provider this agent uses
+  const agentId = agentName.toLowerCase().replace("agent", "").replace(/\s/g, "_");
+  const provider = AGENT_PROVIDER[agentId] ?? "gemini";
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
 
   const runNumber = context?.includes("run4")
     ? "run4"
@@ -505,6 +508,25 @@ export async function generateAgentOutput({
     : context?.includes("run2")
     ? "run2"
     : "run1";
+
+  // Route to OpenAI or Anthropic if configured for this agent
+  if (provider === "openai" && process.env.OPENAI_API_KEY) {
+    try {
+      const output = await generateWithOpenAI({ agentName, role, task, mission, context, tokenAccumulator: _tokens });
+      if (output) return output;
+    } catch (err) {
+      console.error(`[openai] ${agentName} failed, falling back to Gemini:`, err);
+    }
+  }
+
+  if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
+    try {
+      const output = await generateWithAnthropic({ agentName, role, task, mission, context, tokenAccumulator: _tokens });
+      if (output) return output;
+    } catch (err) {
+      console.error(`[anthropic] ${agentName} failed, falling back to Gemini:`, err);
+    }
+  }
 
   if (apiKey) {
     const startTime = Date.now();
