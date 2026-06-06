@@ -1,0 +1,24 @@
+\begin{tikzpicture}[
+  font=\sffamily\small,
+  box/.style={draw=black!55, fill=gray!6, rounded corners=2pt, minimum width=2.7cm, minimum height=0.85cm, align=center},
+  math/.style={draw=purple!55!black, fill=purple!8, rounded corners=2pt, minimum width=2.8cm, minimum height=0.85cm, align=center},
+  store/.style={draw=green!45!black, fill=green!8, rounded corners=2pt, minimum width=3.0cm, minimum height=0.9cm, align=center},
+  arr/.style={-{Latex[length=2mm]}, thick, draw=black!65}
+]
+\node[box] (eval) {EvaluatorAgent\\\(Q,F,U,S,A,C\)};
+\node[math, right=0.9cm of eval] (beta) {Beta update\\\(\alpha,\beta,r,u\)};
+\node[math, right=0.9cm of beta] (elo) {Elo / BT\\pairwise rating};
+\node[math, below=0.9cm of beta] (graph) {Graph trust\\PageRank edges};
+\node[math, left=0.9cm of graph] (shapley) {Contribution\\\(\phi_i\)};
+\node[store, right=0.9cm of graph] (memory) {Redis / Memory\\\(H_{k+1}\)};
+\node[box, below=0.95cm of memory] (next) {Next mission\\MarketMaker input};
+
+\draw[arr] (eval) -- (beta);
+\draw[arr] (beta) -- (elo);
+\draw[arr] (eval) -- (shapley);
+\draw[arr] (shapley) -- (graph);
+\draw[arr] (elo) |- (memory);
+\draw[arr] (graph) -- (memory);
+\draw[arr] (memory) -- (next);
+\draw[arr] (next.west) -- ++(-5.8,0) |- (eval.west);
+\end{tikzpicture}

@@ -1,0 +1,28 @@
+\begin{tikzpicture}[
+  font=\sffamily\small,
+  box/.style={draw=blue!45!black, fill=blue!6, rounded corners=2pt, minimum width=3.2cm, minimum height=0.9cm, align=center},
+  store/.style={draw=green!45!black, fill=green!8, rounded corners=2pt, minimum width=3.2cm, minimum height=0.9cm, align=center},
+  trace/.style={draw=orange!70!black, fill=orange!10, rounded corners=2pt, minimum width=3.2cm, minimum height=0.9cm, align=center},
+  arr/.style={-{Latex[length=2mm]}, thick, draw=black!65}
+]
+\node[box] (mission) {User Mission\\\(M\)};
+\node[box, right=1.0cm of mission] (planner) {PlannerAgent\\task decomposition};
+\node[box, right=1.0cm of planner] (auction) {Agent Auction\\bids and clearing price};
+\node[box, right=1.0cm of auction] (maker) {MarketMaker\\weighted scoring};
+
+\node[box, below=1.1cm of auction] (swarm) {Selected Swarm\\task assignments};
+\node[box, below=1.1cm of swarm] (exec) {Gemini Execution\\or deterministic fallback};
+\node[trace, left=1.0cm of exec] (weave) {Weave + Local Traces\\calls, tokens, latency};
+\node[box, right=1.0cm of exec] (eval) {EvaluatorAgent\\six score dimensions};
+\node[store, above=1.1cm of eval] (memory) {Redis or In-Memory\\reputation, task memory};
+
+\draw[arr] (mission) -- (planner);
+\draw[arr] (planner) -- (auction);
+\draw[arr] (auction) -- (maker);
+\draw[arr] (maker) |- (swarm);
+\draw[arr] (swarm) -- (exec);
+\draw[arr] (exec) -- (eval);
+\draw[arr] (exec) -- (weave);
+\draw[arr] (eval) -- (memory);
+\draw[arr] (memory) |- (maker);
+\end{tikzpicture}

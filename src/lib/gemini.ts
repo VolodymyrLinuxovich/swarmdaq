@@ -1,5 +1,11 @@
 import { traceLLMCall } from "./trace";
 
+// ── Per-mission token accumulator ────────────────────────────────────────────
+// Server-side, single-request scope. Reset at start of each mission.
+let _tokens = { input: 0, output: 0 };
+export function resetTokenAccumulator() { _tokens = { input: 0, output: 0 }; }
+export function getTokenAccumulator() { return { ..._tokens }; }
+
 export interface TaskPlanItem {
   type: string;
   description: string;
@@ -534,12 +540,20 @@ Provide your expert analysis and output for this task. Be specific with numbers,
       const output = response.text ?? "";
       const latency = (Date.now() - startTime) / 1000;
 
+      // Real token counts from Gemini usageMetadata (falls back to char estimate)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const usage = (response as any).usageMetadata;
+      const inputTokens: number = usage?.promptTokenCount ?? Math.floor((systemPrompt + userPrompt).length / 4);
+      const outputTokens: number = usage?.candidatesTokenCount ?? Math.floor(output.length / 4);
+      _tokens.input += inputTokens;
+      _tokens.output += outputTokens;
+
       await traceLLMCall({
         model: "gemini-2.5-flash",
         agentId: agentName.toLowerCase().replace("agent", ""),
         task,
-        inputTokens: Math.floor((systemPrompt + userPrompt).length / 4),
-        outputTokens: Math.floor(output.length / 4),
+        inputTokens,
+        outputTokens,
         latency,
         output: output.slice(0, 200),
       });

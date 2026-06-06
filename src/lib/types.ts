@@ -125,6 +125,28 @@ export interface AgentMessage {
   type: "info" | "flag" | "confirm" | "synergy" | "penalty";
 }
 
+export interface MarketDecisionEntry {
+  taskType: string;
+  winnerId: string;
+  winnerName: string;
+  candidates: Array<{
+    agentId: string;
+    agentName: string;
+    compositeScore: number;
+    skillMatch: number;
+    bayesianMean: number;
+    ucb: number;
+    graphTrust: number;
+  }>;
+}
+
+export interface RunCost {
+  inputTokens: number;
+  outputTokens: number;
+  totalUSD: number;
+  model: string;
+}
+
 export interface MissionResult {
   missionId: string;
   mission: string;
@@ -147,6 +169,9 @@ export interface MissionResult {
   runNumber: number;
   improvementFromPrevious?: ImprovementSummary;
   agentMessages?: AgentMessage[];
+  runCost?: RunCost;
+  weaveTraceUrl?: string;
+  marketDecisionLog?: MarketDecisionEntry[];
 }
 
 export interface ImprovementSummary {

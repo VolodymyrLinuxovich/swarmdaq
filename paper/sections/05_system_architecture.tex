@@ -1,0 +1,32 @@
+\section{System Architecture}
+
+\systemname{} is implemented as a single Next.js App Router application with a TypeScript backend, interactive frontend pages, API routes, and mathematical routing modules. The deployed website presents the project as a live performance exchange for agents, and the repository implements the same core loop in code.
+
+\begin{figure}[t]
+\centering
+\resizebox{\linewidth}{!}{\paperinput{figures/architecture_placeholder.tex}}
+\caption{System architecture of \systemname{}. The mission is decomposed, agents bid, the \marketmaker{} selects a swarm, Gemini-backed or fallback execution produces outputs, \weave{} and local traces record the run, evaluation scores the outputs, and Redis or in-memory storage updates reputation for future routing.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Application Layer}
+
+The frontend is a Next.js application with pages for the landing experience, architecture explanation, live demo, and benchmark harness. The landing page describes the system as a performance exchange. The demo page exposes the operational dashboard: mission input, agent registry, reputation leaderboard, auction log, MarketMaker decision log, output panel, evaluation score panel, trust graph, contribution ledger, and Weave trace panel. The architecture page explains the system flow and the mathematical engine. The benchmark page runs a small suite of mission prompts through the same \path{/api/mission} route and displays scores, costs, and dimension-level outputs.
+
+\subsection{API Routes}
+
+The server surface consists of focused API routes. \path{/api/mission} accepts a mission and optional run number, invokes the orchestrator, and returns a structured \texttt{MissionResult}. \path{/api/agents} returns the current agent registry and leaderboard. \path{/api/traces} fetches recent Weave call summaries when a \texttt{WANDB\_API\_KEY} is available and otherwise returns an empty trace summary. \path{/api/reset-demo} resets demo memory, local traces, and graph-trust edges.
+
+\subsection{Agent Registry and Task Model}
+
+The registry in \path{src/lib/agents.ts} defines nine default agents: PlannerAgent, ResearchAgent, SourceVerifierAgent, BuilderAgent, PitchAgent, SkepticAgent, EvaluatorAgent, MarketMakerAgent, and ReputationAgent. Each agent carries operational fields such as price, average latency, factuality, usefulness, collaboration, status, and reputation. The same object also stores mathematical state: Beta parameters \(\alpha,\beta\), mean reward, uncertainty, number of runs, wins, losses, Elo rating, UCB score, PageRank-style graph trust, and Bayesian mean.
+
+The default task set includes market research, positioning, landing-page copy, pitch script, risk review, and final evaluation. When Gemini credentials are available, PlannerAgent can dynamically decompose the user mission into task types. Without credentials, the system falls back to the static task catalog.
+
+\subsection{Execution, Tracing, and Memory}
+
+Agent execution is handled in \path{src/lib/gemini.ts}. With a Gemini API key, the system uses \texttt{@google/genai} and the \texttt{gemini-2.5-flash} model. If a \texttt{WANDB\_API\_KEY} is configured, the code attempts to wrap the Gemini client with Weave instrumentation. If credentials are absent or a call fails, deterministic fallback outputs preserve the demo flow.
+
+Tracing is centralized in \path{src/lib/trace.ts}. The code initializes Weave when possible and always records local structured trace events such as mission receipt, planning, bidding, agent execution, evaluation, reputation update, and final synthesis. The route \path{/api/traces} can query the Weave REST API for call counts, tokens, latency, and operation names.
+
+Memory is centralized in \path{src/lib/memory.ts}. In production-like settings, the system uses Upstash Redis REST credentials, which work in serverless environments. Without credentials, it uses an in-memory store with the same functional interface. The memory layer stores agents, leaderboards, task-specific history, run count, and last-mission summaries.

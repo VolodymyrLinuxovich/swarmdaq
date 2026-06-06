@@ -199,6 +199,7 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-6">
           <Link href="/architecture" className="text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Architecture</Link>
+          <Link href="/benchmark" className="text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Benchmarks</Link>
           <Link href="/demo" className="text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Demo</Link>
           <Link
             href="/demo"
@@ -258,10 +259,16 @@ export default function LandingPage() {
                   ⚡ LAUNCH LIVE DEMO
                 </Link>
                 <Link
+                  href="/benchmark"
+                  className="px-8 py-4 border border-purple-500/60 text-purple-400 text-sm font-bold rounded hover:bg-purple-500/10 transition-all font-mono"
+                >
+                  📊 Run Benchmarks
+                </Link>
+                <Link
                   href="/architecture"
                   className="px-8 py-4 border border-slate-700 text-slate-300 text-sm font-bold rounded hover:border-slate-500 transition-all font-mono"
                 >
-                  View Architecture
+                  Architecture
                 </Link>
               </div>
 
@@ -270,13 +277,13 @@ export default function LandingPage() {
                 {[
                   { label: "Agents", value: 9, prefix: "" },
                   { label: "Math Models", value: 7, prefix: "" },
-                  { label: "Avg Score Gain", value: 17, prefix: "+" },
+                  { label: "Peak Score Gain", value: 22, prefix: "+" },
                 ].map((s) => (
                   <div key={s.label}>
                     <div className="text-2xl font-black neon-green">
                       {s.prefix}<AnimatedCounter target={s.value} />{s.label === "Avg Score Gain" ? " pts" : ""}
                     </div>
-                    <div className="text-xs text-slate-600 font-mono">{s.label}</div>
+                    <div className="text-xs text-slate-600 font-mono">{s.label}{s.label === "Peak Score Gain" ? " (run 1→4)" : ""}</div>
                   </div>
                 ))}
               </div>

@@ -8,6 +8,7 @@ import {
   ReputationChange,
   ImprovementSummary,
   MathSnapshot,
+  MarketDecisionEntry,
 } from "./types";
 import {
   getAgents,
@@ -18,7 +19,7 @@ import {
   getTotalAgentRuns,
   getRunCount,
 } from "./memory";
-import { generateAgentOutput, planMissionTasks } from "./gemini";
+import { generateAgentOutput, planMissionTasks, resetTokenAccumulator, getTokenAccumulator } from "./gemini";
 import { TASKS } from "./agents";
 import { getAgentMessages } from "./messages";
 import { traceEvent } from "./trace";
@@ -77,7 +78,7 @@ async function selectAgentForTask(
   agents: Agent[],
   totalRuns: number,
   runNum: number
-): Promise<{ agent: Agent; bids: AgentBid[] }> {
+): Promise<{ agent: Agent; bids: AgentBid[]; decisionEntry: MarketDecisionEntry }> {
   // Compute UCB scores
   const ucbMap: Record<string, number> = {};
   for (const a of agents) {
@@ -114,6 +115,29 @@ async function selectAgentForTask(
     return { agent, score };
   });
 
+  // Build decision log for this task (top 3 candidates)
+  const topCandidates = [...scored].sort((a, b) => b.score - a.score).slice(0, 3).map((s) => {
+    const skillMatch = task.requiredSkills.filter((sk) => s.agent.skills.includes(sk)).length / Math.max(task.requiredSkills.length, 1);
+    const ucb = ucbMap[s.agent.id] ?? 0;
+    const trust = clamp01((trustMap[s.agent.id] ?? 0.1) * 5);
+    return {
+      agentId: s.agent.id,
+      agentName: s.agent.name,
+      compositeScore: parseFloat(s.score.toFixed(4)),
+      skillMatch: parseFloat(skillMatch.toFixed(3)),
+      bayesianMean: parseFloat(s.agent.bayesianMean.toFixed(3)),
+      ucb: parseFloat(ucb.toFixed(3)),
+      graphTrust: parseFloat(trust.toFixed(3)),
+    };
+  });
+
+  const makeEntry = (winner: Agent): MarketDecisionEntry => ({
+    taskType: task.type,
+    winnerId: winner.id,
+    winnerName: winner.name,
+    candidates: topCandidates,
+  });
+
   // Run 2: pair research with source_verifier (learned from run 1 factuality failure)
   if (runNum === 2 && task.type === "market_research") {
     const researchPair = scored.filter((s) =>
@@ -121,28 +145,28 @@ async function selectAgentForTask(
     );
     if (researchPair.length > 0) {
       researchPair.sort((a, b) => b.score - a.score);
-      return { agent: researchPair[0].agent, bids };
+      return { agent: researchPair[0].agent, bids, decisionEntry: makeEntry(researchPair[0].agent) };
     }
   }
 
   // Run 3: SkepticAgent over-rotated — forces skeptic into pitch_script (the regression)
   if (runNum === 3 && task.type === "pitch_script") {
     const skepticFirst = scored.find((s) => s.agent.id === "skeptic");
-    if (skepticFirst) return { agent: skepticFirst.agent, bids };
+    if (skepticFirst) return { agent: skepticFirst.agent, bids, decisionEntry: makeEntry(skepticFirst.agent) };
   }
 
   // Run 4: PitchAgent leads pitch, BuilderAgent on copy — balanced recovery
   if (runNum >= 4 && task.type === "pitch_script") {
     const pitchAgent = scored.find((s) => s.agent.id === "pitch");
-    if (pitchAgent) return { agent: pitchAgent.agent, bids };
+    if (pitchAgent) return { agent: pitchAgent.agent, bids, decisionEntry: makeEntry(pitchAgent.agent) };
   }
   if (runNum >= 4 && task.type === "landing_page_copy") {
     const builderAgent = scored.find((s) => s.agent.id === "builder");
-    if (builderAgent) return { agent: builderAgent.agent, bids };
+    if (builderAgent) return { agent: builderAgent.agent, bids, decisionEntry: makeEntry(builderAgent.agent) };
   }
 
   scored.sort((a, b) => b.score - a.score);
-  return { agent: scored[0].agent, bids };
+  return { agent: scored[0].agent, bids, decisionEntry: makeEntry(scored[0].agent) };
 }
 
 async function planTasksForMission(mission: string): Promise<Task[]> {
@@ -160,6 +184,7 @@ async function planTasksForMission(mission: string): Promise<Task[]> {
 }
 
 export async function runMission(mission: string, clientRunNumber?: number): Promise<MissionResult> {
+  resetTokenAccumulator();
   const missionId = uuidv4();
   const agents = await getAgents();
   const totalRuns = await getTotalAgentRuns();
@@ -181,12 +206,13 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
   const selectedAgentIds: Set<string> = new Set();
   const selectedAgents: Agent[] = [];
   const taskAssignments: Record<string, Agent> = {};
+  const marketDecisionLog: MarketDecisionEntry[] = [];
 
   for (const task of tasks) {
     if (task.type === "final_eval") continue;
 
     await traceEvent({ type: "collect_bid", data: { taskId: task.id } });
-    const { agent, bids } = await selectAgentForTask(
+    const { agent, bids, decisionEntry } = await selectAgentForTask(
       task,
       agents,
       totalRuns,
@@ -194,6 +220,7 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
     );
 
     allBids.push(...bids.slice(0, 3)); // top 3 bids per task
+    marketDecisionLog.push(decisionEntry);
     task.assignedAgentId = agent.id;
     task.status = "assigned";
     taskAssignments[task.id] = agent;
@@ -459,6 +486,17 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
   // Final synthesis
   await traceEvent({ type: "final_synthesis", data: { missionId, score: evalScore.overall } });
 
+  // Cost computation — Gemini 2.5 Flash pricing (non-thinking tier)
+  const tokens = getTokenAccumulator();
+  const GEMINI_INPUT_RATE  = 0.075 / 1_000_000; // $ per token
+  const GEMINI_OUTPUT_RATE = 0.30  / 1_000_000;
+  const totalUSD = tokens.input * GEMINI_INPUT_RATE + tokens.output * GEMINI_OUTPUT_RATE;
+  const runCost = { inputTokens: tokens.input, outputTokens: tokens.output, totalUSD, model: "gemini-2.5-flash" };
+
+  const entity  = process.env.WANDB_ENTITY  ?? "vborysenko-uc-berkeley";
+  const project = process.env.WANDB_PROJECT ?? "swarmdaq";
+  const weaveTraceUrl = `https://wandb.ai/${entity}/${project}/weave`;
+
   // Build final output
   const result: MissionResult = {
     missionId,
@@ -484,6 +522,9 @@ export async function runMission(mission: string, clientRunNumber?: number): Pro
     runNumber: runNum,
     improvementFromPrevious,
     agentMessages: getAgentMessages(runNum),
+    runCost,
+    weaveTraceUrl,
+    marketDecisionLog,
   };
 
   await recordMission(result);

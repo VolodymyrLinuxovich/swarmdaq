@@ -70,34 +70,42 @@ clearingPrice = secondBest.cost`,
     title: "Weave Tracing",
     color: "#00ff88",
     icon: "🔍",
-    body: "Every operation — mission receipt, task planning, bid collection, agent execution, evaluation, reputation update — is traced as a structured event. When WANDB_API_KEY is set, events flow to W&B Weave for full observability, experiment tracking, and eval replay. The trace store is always local as fallback.",
-    code: `traceEvent({ type: "mission_received", data: { missionId, mission } })
-traceEvent({ type: "collect_bid",      data: { taskId } })
-traceEvent({ type: "run_agent",        data: { agentId, task } })
-traceEvent({ type: "evaluate_output",  data: { runNum } })
-traceEvent({ type: "update_reputation",data: { changes } })
-traceEvent({ type: "final_synthesis",  data: { score } })
+    body: "Every LLM call is wrapped with weave.wrapGoogleGenAI() and traced to W&B Weave in real time. The live Weave traces panel in the demo fetches call counts, token totals, avg latency, and per-call op names via the Weave REST API. Per-run cost is computed from real usageMetadata (Gemini 2.5 Flash: $0.075/1M input, $0.30/1M output).",
+    code: `// SDK wrapping — every generateContent call auto-traced
+genAI = weave.wrapGoogleGenAI(genAI)
+weave.init("vborysenko-uc-berkeley/swarmdaq")
 
-// W&B Weave SDK connects here:
-// weave.init(WANDB_PROJECT)
-// weave.logEvent(traceEvent)`,
+// Live Weave REST API (demo fetches after each run)
+POST https://trace.wandb.ai/calls/query
+  project_id: "vborysenko-uc-berkeley/swarmdaq"
+  → { calls: [{ op_name, latencyMs, totalTokens }] }
+
+// Per-run cost from usageMetadata
+inputTokens  = response.usageMetadata.promptTokenCount
+outputTokens = response.usageMetadata.candidatesTokenCount
+cost = input * $0.075/1M + output * $0.30/1M
+// Typical run: ~6K tokens · ~$0.0022`,
   },
   {
     step: "05",
     title: "Redis Memory",
     color: "#dc382d",
     icon: "💾",
-    body: "Agent state persists across runs. If REDIS_URL is set, the system uses Redis hashes (agent:{id}), sorted sets (agent:leaderboard), and string keys (memory:{taskType}:{agentId}). Without Redis, an in-memory store provides full functionality. The same API works for both.",
-    code: `// Redis schema
-HSET agent:research reputation 78 factuality 0.72 alpha 5 beta 4
-ZADD agent:leaderboard 93 skeptic 91 source_verifier 90 evaluator
-SET  memory:market_research:research {"score":0.74,"count":3}
+    body: "Agent state persists across cold starts via Upstash Redis (HTTP REST — works in Vercel serverless, no TCP connections). Agent records, reputation scores, Elo ratings, and Bayesian posteriors survive across visitors and deployments. Without credentials, an in-memory store provides full functionality with identical API.",
+    code: `// Upstash Redis (HTTP REST, no TCP — serverless-safe)
+import { Redis } from "@upstash/redis"
+const redis = new Redis({ url: UPSTASH_REDIS_REST_URL, token: UPSTASH_REDIS_REST_TOKEN })
 
-// Memory API (same interface for Redis + in-memory)
+// Key schema
+swarmdaq:agent:{id}       → JSON Agent object
+swarmdaq:leaderboard      → sorted set (score = reputation)
+swarmdaq:mem:{type}:{id}  → { score, count } task memory
+swarmdaq:runCount         → integer
+
+// Same API for Redis + in-memory fallback
 getAgents()          → Agent[]
-updateAgent(id, patch)
-recordTaskMemory(task, agentId, score)
-getLeaderboard()     → Agent[] (sorted by reputation)`,
+updateAgent(id, patch) → zadd leaderboard + set agent
+resetDemo()          → del all keys`,
   },
   {
     step: "06",
@@ -124,20 +132,23 @@ R_new = R_old + K * (actual - expected)  // K=24`,
     title: "Self-Improvement",
     color: "#00aaff",
     icon: "🚀",
-    body: "Run 1 exposes a factuality gap. ResearchAgent loses reputation. SourceVerifierAgent is recommended as a required pair. The trust graph records their collaboration edge. On run 2, UCB + Bayesian reputation + swarm portfolio optimization selects ResearchAgent + SourceVerifierAgent together. Score improves from 74 → 91. The market learned.",
-    code: `// Run 1 → Run 2 comparison
-Score:       74  →  91   (+17)
-Factuality:  68  →  94   (+26)
-Confidence:  —   →  +12%
-Risk cover:  —   →  -23%
+    body: "Run 1: ResearchAgent makes an unsourced claim — penalized −4 rep, −18 Elo. Run 2: market pairs ResearchAgent + SourceVerifierAgent, factuality +26. Run 3: market over-rotates on SkepticAgent — score regresses 91→85, but factuality holds. Run 4: PitchAgent + BuilderAgent synergy unlocked, all dimensions peak at 96. The regression in run 3 is intentional — real markets overshoot before calibrating.",
+    code: `// Full 4-run arc
+Run 1:  score 74  factuality 68  objective 0.61  ← baseline
+Run 2:  score 91  factuality 94  objective 0.84  ← +26 factuality
+Run 3:  score 85  factuality 96  objective 0.72  ← ⚠ narrative -13
+Run 4:  score 96  factuality 95  objective 0.94  ← calibrated peak
 
-// Swarm portfolio objective
-objective = E[return] - 0.35*variance - 0.15*cost + synergy
-Run 1: 0.61   →   Run 2: 0.84  (+0.23)
+// Who drove run 4 gains? (Shapley values)
+PitchAgent:          φ = +21.4  (narrative quality)
+SourceVerifierAgent: φ = +17.0  (factuality)
+BuilderAgent:        φ = +12.3  (product clarity)
+SkepticAgent:        φ =  +8.2  (risk calibration)
 
-// Shapley: who drove the gain?
-SourceVerifierAgent: +17 factuality points
-SkepticAgent: +9 risk-reduction points`,
+// Trust graph edges added by run 4
+research ↔ source_verifier  (+0.17)
+pitch    ↔ builder           (+0.14)
+skeptic  ↔ pitch             (+0.08)`,
   },
 ];
 
@@ -157,6 +168,7 @@ export default function ArchitecturePage() {
       <nav className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 bg-black/90 backdrop-blur-sm border-b border-green-900/20">
         <Link href="/" className="text-sm font-black neon-green tracking-widest">SWARMDAQ</Link>
         <div className="flex items-center gap-4">
+          <Link href="/benchmark" className="text-xs text-slate-500 hover:text-green-400 transition-colors">Benchmarks</Link>
           <Link href="/demo" className="text-xs text-slate-500 hover:text-green-400 transition-colors">Demo</Link>
           <Link href="/demo" className="px-4 py-2 text-xs font-bold border border-green-500/50 text-green-400 rounded hover:bg-green-500/10 transition-all">
             Launch Demo →
@@ -280,35 +292,43 @@ export default function ArchitecturePage() {
         <div className="mt-20 p-8 rounded border border-green-900/40 bg-green-950/10 text-center">
           <div className="text-xs font-mono text-green-500/70 mb-3 uppercase tracking-widest">The Key Insight</div>
           <h2 className="text-3xl font-black text-slate-100 mb-4">
-            The second run is always better.
+            Markets over-correct before they calibrate.
           </h2>
-          <p className="text-slate-400 max-w-2xl mx-auto leading-relaxed mb-6">
-            After run 1, ResearchAgent is penalized for an unsupported claim. SourceVerifierAgent is recommended as a required pair. The trust graph records their collaboration edge. On run 2, the market selects a better swarm automatically.
+          <p className="text-slate-400 max-w-2xl mx-auto leading-relaxed mb-8">
+            Run 1: ResearchAgent makes an unsourced claim — penalized. Run 2: SourceVerifier paired in — factuality jumps 26 pts. Run 3: Market over-rotates, SkepticAgent displaces PitchAgent — score regresses. Run 4: Balanced swarm. New peak. The regression in run 3 is the point — real markets overshoot.
           </p>
-          <div className="flex justify-center gap-12 font-mono text-sm">
-            <div className="text-center">
-              <div className="text-3xl font-black text-amber-400">74</div>
-              <div className="text-xs text-slate-600">Run 1 Score</div>
-            </div>
-            <div className="text-center text-slate-700 text-2xl font-black self-center">→</div>
-            <div className="text-center">
-              <div className="text-3xl font-black text-green-400">91</div>
-              <div className="text-xs text-slate-600">Run 2 Score</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-black neon-green">+17</div>
-              <div className="text-xs text-slate-600">Factuality Points</div>
-            </div>
+          <div className="flex justify-center items-end gap-4 font-mono text-sm flex-wrap">
+            {[
+              { score: 74, label: "Run 1", sub: "factuality gap", color: "#fbbf24" },
+              { score: 91, label: "Run 2", sub: "market learned", color: "#00ff88" },
+              { score: 85, label: "Run 3", sub: "⚠ over-rotation", color: "#ef4444" },
+              { score: 96, label: "Run 4", sub: "calibrated peak", color: "#22d3ee" },
+            ].map((r, i, arr) => (
+              <div key={r.label} className="flex items-center gap-4">
+                <div className="text-center">
+                  <div className="text-3xl font-black" style={{ color: r.color }}>{r.score}</div>
+                  <div className="text-xs font-bold mt-0.5" style={{ color: r.color }}>{r.label}</div>
+                  <div className="text-xs text-slate-600 mt-0.5">{r.sub}</div>
+                </div>
+                {i < arr.length - 1 && <div className="text-slate-700 text-xl self-center mb-4">→</div>}
+              </div>
+            ))}
           </div>
         </div>
 
         {/* CTA */}
-        <div className="mt-16 text-center">
+        <div className="mt-16 text-center flex flex-wrap gap-4 justify-center">
           <Link
             href="/demo"
             className="inline-flex items-center gap-2 px-10 py-5 bg-green-500 text-black font-black text-sm rounded hover:bg-green-400 transition-all glow-green tracking-wider"
           >
             ⚡ SEE IT IN ACTION →
+          </Link>
+          <Link
+            href="/benchmark"
+            className="inline-flex items-center gap-2 px-10 py-5 border border-purple-500/50 text-purple-400 font-black text-sm rounded hover:bg-purple-500/10 transition-all tracking-wider"
+          >
+            📊 RUN BENCHMARKS →
           </Link>
         </div>
       </div>

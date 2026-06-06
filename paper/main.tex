@@ -1,0 +1,66 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{hyperref}
+
+\usetikzlibrary{arrows.meta,positioning,calc,fit,shapes.geometric,backgrounds}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  citecolor=blue!50!black,
+  urlcolor=blue!50!black,
+  pdftitle={SwarmDAQ: A Market-Based Performance Exchange for Self-Improving AI Agent Swarms},
+  pdfauthor={Volodymyr Borysenko}
+}
+
+\setlength{\parskip}{0.55em}
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.15}
+
+\newcommand{\systemname}{SwarmDAQ}
+\newcommand{\marketmaker}{MarketMaker}
+\newcommand{\weave}{W\&B Weave}
+\newcommand{\paperinput}[1]{\InputIfFileExists{paper/#1}{}{\input{#1}}}
+\newcommand{\paperbibfile}{references}
+\IfFileExists{paper/references.bib}{\renewcommand{\paperbibfile}{paper/references}}{}
+
+\title{\textbf{SwarmDAQ: A Market-Based Performance Exchange for Self-Improving AI Agent Swarms}}
+\author{Volodymyr Borysenko}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\paperinput{sections/01_abstract.tex}
+\end{abstract}
+
+\paperinput{sections/02_introduction.tex}
+\paperinput{sections/03_problem_statement.tex}
+\paperinput{sections/04_market_and_user_problem.tex}
+\paperinput{sections/05_system_architecture.tex}
+\paperinput{sections/06_mathematical_approach.tex}
+\paperinput{sections/07_computing_implementation.tex}
+\paperinput{sections/08_evaluation_and_demo.tex}
+\paperinput{sections/09_limitations.tex}
+\paperinput{sections/10_conclusion.tex}
+
+\bibliographystyle{plainnat}
+\bibliography{\paperbibfile}
+
+\end{document}

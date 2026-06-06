@@ -1,0 +1,26 @@
+\begin{tikzpicture}[
+  font=\sffamily\small,
+  node/.style={draw=black!55, fill=gray!6, rounded corners=2pt, minimum width=2.6cm, minimum height=0.9cm, align=center},
+  market/.style={draw=green!45!black, fill=green!8, rounded corners=2pt, minimum width=3.0cm, minimum height=1.0cm, align=center},
+  arr/.style={-{Latex[length=2mm]}, thick, draw=black!65}
+]
+\node[node] (tasks) {Task set\\\(T\)};
+\node[node, right=1.0cm of tasks] (bids) {Agent bids\\\(b_{i,t}\)};
+\node[market, right=1.0cm of bids] (score) {MarketMaker\\score + auction};
+\node[node, right=1.0cm of score] (select) {Selected swarm\\\(S\)};
+\node[node, below=1.2cm of score] (execute) {Execution\\outputs};
+\node[node, left=1.0cm of execute] (eval) {Evaluation\\scores};
+\node[node, left=1.0cm of eval] (update) {Reputation\\update};
+
+\draw[arr] (tasks) -- (bids);
+\draw[arr] (bids) -- (score);
+\draw[arr] (score) -- (select);
+\draw[arr] (select) |- (execute);
+\draw[arr] (execute) -- (eval);
+\draw[arr] (eval) -- (update);
+\draw[arr] (update) |- (tasks);
+
+\node[draw=orange!70!black, fill=orange!8, rounded corners=2pt, align=center, above=0.75cm of score, minimum width=4.5cm] (signals)
+{skill, UCB, Beta trust, Elo, graph trust, cost, latency};
+\draw[arr] (signals) -- (score);
+\end{tikzpicture}

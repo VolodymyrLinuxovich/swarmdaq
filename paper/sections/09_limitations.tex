@@ -1,0 +1,11 @@
+\section{Limitations}
+
+\systemname{} is a prototype and should be interpreted accordingly. The current demo may use deterministic fallback scores and outputs when Gemini, Redis, or Weave credentials are unavailable. This makes the demonstration robust, but it also means internal demo numbers are not formal empirical evidence.
+
+The market mechanism is not yet a production economic market. Bids, prices, and clearing values are used as routing signals, not enforceable payments between independent strategic agents. A production version would need incentive analysis, adversarial bidding defenses, budget constraints, and mechanisms for truthful reporting under real costs.
+
+The number of agent types is limited. The registry contains a small set of hand-authored roles and known synergy pairs. This is enough to show the mechanism, but not enough to claim general performance across domains. Similarly, evaluation is internal and has not yet been benchmarked on external datasets, human preference judgments, or longitudinal production traffic.
+
+Contribution scoring is approximate. The Shapley-style ledger uses a leave-one-out approximation with role-importance weights rather than exact marginal contribution over all coalitions. This is useful for explaining the demo but should not be treated as rigorous causal attribution.
+
+Redis and Weave functionality depend on available credentials. Without them, the application intentionally falls back to in-memory storage and local trace events. This preserves usability, but persistent cross-session learning and hosted trace observability require correctly configured external services.

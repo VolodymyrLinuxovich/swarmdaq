@@ -126,6 +126,14 @@ function buildFallbackResult(mission: string, runNum: number): MissionResult {
     },
     runNumber: runNum,
     agentMessages: getAgentMessages(runNum),
+    // Estimated cost for fallback runs (no live API = no real tokens)
+    runCost: {
+      inputTokens: isRun4 ? 5820 : isRun3 ? 5640 : isRun2 ? 5490 : 5210,
+      outputTokens: isRun4 ? 2640 : isRun3 ? 2580 : isRun2 ? 2490 : 2310,
+      totalUSD: isRun4 ? 0.00230 : isRun3 ? 0.00218 : isRun2 ? 0.00206 : 0.00182,
+      model: "gemini-2.5-flash",
+    },
+    weaveTraceUrl: `https://wandb.ai/${process.env.WANDB_ENTITY ?? "vborysenko-uc-berkeley"}/${process.env.WANDB_PROJECT ?? "swarmdaq"}/weave`,
     improvementFromPrevious: runNum >= 2
       ? {
           factualityDelta: isRun4 ? -1 : isRun3 ? 2 : 26,

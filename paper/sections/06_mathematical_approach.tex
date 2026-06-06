@@ -1,0 +1,154 @@
+\section{Mathematical Approach}
+
+The strongest technical claim of \systemname{} is that routing should be a scored market decision rather than a hard-coded agent order. The current implementation combines auction utility, bandit exploration, Bayesian trust, pairwise rating, portfolio construction, graph trust, and approximate contribution scoring.
+
+\subsection{Agent Utility and Bidding}
+
+For task \(t\), agent \(i\) forms a utility bid from expected quality, confidence, trust, cost, latency, and risk. Let \(\mathrm{Skill}_{i,t}\in[0,1]\) be the fraction of required skills covered by the agent. The implementation estimates expected quality as
+\begin{equation}
+\hat{q}_{i,t} =
+\mathrm{clip}_{[0,1]}
+\left(
+0.4\,\mathrm{Skill}_{i,t}
++0.3\,r_i
++0.3\,\mathrm{confidence}_i
+\right),
+\end{equation}
+where \(r_i\) is the Bayesian mean reputation. The bid utility is
+\begin{equation}
+b_{i,t} =
+0.40\,\hat{q}_{i,t}
++0.25\,\mathrm{confidence}_i
++0.20\,r_i
+-0.10\,\tilde{c}_i
+-0.05\,\tilde{l}_i
+-0.10\,\mathrm{risk}_i.
+\end{equation}
+Here \(\tilde{c}_i\) and \(\tilde{l}_i\) are normalized cost and latency. The auction is Vickrey-inspired: bids are sorted by utility, the winner is marked, and the winner's clearing price is the second-best bid's cost. This is not a full economic market with enforceable payments, but it makes the selection mechanism visible and creates an interface for richer pricing later.
+
+\begin{figure}[t]
+\centering
+\resizebox{0.92\linewidth}{!}{\paperinput{figures/market_loop_placeholder.tex}}
+\caption{Agent market loop. Agents submit task bids, the \marketmaker{} combines bids with historical signals, selected agents execute, and the evaluator turns outcomes into updated market state.}
+\label{fig:market-loop}
+\end{figure}
+
+\subsection{UCB1 Exploration and Exploitation}
+
+A purely reputation-based system can collapse into repeatedly selecting the same agents. \systemname{} uses UCB1-style exploration to keep under-tested agents available \citep{auer2002finite}. Let \(\bar{x}_i\) be the empirical mean reward for agent \(i\), \(n_i\) be its run count, and \(N\) be the total number of agent runs. The implementation uses
+\begin{equation}
+\mathrm{UCB}_i =
+\mathrm{clip}_{[0,1]}
+\left(
+\bar{x}_i + c\sqrt{\frac{\ln(N+1)}{n_i+1}}
+\right),
+\quad c=1.4.
+\end{equation}
+The \(+1\) terms avoid division by zero and allow the demo to operate from initial state. The exploration term gives less-tested agents a chance, while the clipping keeps all components compatible with the weighted scoring function.
+
+\subsection{Bayesian Beta Reputation}
+
+Agent trust is modeled with a Beta posterior. Let \(y_i\in[0,1]\) be the normalized evaluation reward assigned to agent \(i\). Given prior parameters \((\alpha_i,\beta_i)\), the update is
+\begin{equation}
+\alpha_i' = \alpha_i + y_i,\qquad
+\beta_i' = \beta_i + (1-y_i).
+\end{equation}
+The reputation mean and uncertainty are
+\begin{equation}
+r_i = \mathbb{E}[\theta_i] =
+\frac{\alpha_i}{\alpha_i+\beta_i},
+\end{equation}
+\begin{equation}
+u_i =
+\sqrt{
+\frac{\alpha_i\beta_i}
+{(\alpha_i+\beta_i)^2(\alpha_i+\beta_i+1)}
+}.
+\end{equation}
+This captures both quality and confidence. An agent with a high score after few observations can still carry higher uncertainty than an agent with a long record of reliable performance.
+
+\subsection{Elo and Bradley-Terry Pairwise Rating}
+
+\systemname{} also updates an Elo-style rating for agents \citep{elo1978rating}. For agent \(i\) compared with reference or opponent \(j\), the expected outcome is
+\begin{equation}
+E_i =
+\frac{1}{1+10^{(R_j-R_i)/400}},
+\end{equation}
+and the update is
+\begin{equation}
+R_i' = R_i + K(o_i - E_i),
+\end{equation}
+where \(o_i\in\{0,0.5,1\}\) is the observed outcome and \(K=24\) in the implementation. The code also computes Bradley-Terry probabilities \citep{bradley1952rank}:
+\begin{equation}
+P(i \succ j)=
+\frac{\exp(R_i/400)}
+{\exp(R_i/400)+\exp(R_j/400)}.
+\end{equation}
+These pairwise views are displayed in the math panel for dimensions such as factuality, risk analysis, and narrative quality.
+
+\subsection{Markowitz-Style Swarm Portfolio}
+
+Individual quality is insufficient because a swarm is a portfolio of correlated capabilities. Following the intuition of portfolio selection \citep{markowitz1952portfolio}, \systemname{} estimates swarm value as return minus risk and cost plus synergy:
+\begin{equation}
+J_{\mathrm{portfolio}}(S)
+=
+\bar{r}(S)
+-\lambda_{\mathrm{risk}}\mathrm{Var}(S)
+-\lambda_{\mathrm{cost}}\tilde{C}(S)
++\mathrm{Syn}(S).
+\end{equation}
+The implementation uses \(\lambda_{\mathrm{risk}}=0.35\) and \(\lambda_{\mathrm{cost}}=0.15\). Expected return is the average Bayesian mean of selected agents. Variance is approximated as average uncertainty plus pairwise uncertainty penalties. Synergy is currently a hand-authored bonus for known useful pairs such as ResearchAgent with SourceVerifierAgent, PitchAgent with BuilderAgent, and SkepticAgent with SourceVerifierAgent.
+
+\subsection{Graph Trust and Collaboration Centrality}
+
+Successful collaborations are represented as directed weighted graph edges. A PageRank-style update \citep{page1999pagerank} estimates which agents become valuable collaboration hubs:
+\begin{equation}
+g_i =
+\frac{1-d}{|A|}
++ d\sum_{j\in \mathrm{In}(i)}
+\frac{g_j w_{ji}}{\sum_k w_{jk}},
+\quad d=0.85.
+\end{equation}
+The code initializes known good collaborations and records additional edges after successful runs. Graph trust is then normalized and used as one term in the \marketmaker{} score.
+
+\subsection{Approximate Contribution Scoring}
+
+After evaluation, the system reports a contribution ledger using a leave-one-out Shapley-style approximation \citep{shapley1953value}:
+\begin{equation}
+\phi_i \approx F(S) - F(S\setminus\{i\}),
+\end{equation}
+where \(F(S)\) is the full swarm score. The current implementation uses role-importance weights to approximate the score without each agent. This is explicitly approximate, but it gives the dashboard a practical answer to a key user question: which agent appears to have driven the gain or regression?
+
+\subsection{Final MarketMaker Scoring Function}
+
+The final routing score combines the above components:
+\begin{align}
+\mathrm{Score}_i =
+&\; w_s \mathrm{Skill}_{i,t}
++ w_r \mathrm{Reputation}_i
++ w_u \mathrm{UCB}_i
++ w_b \mathrm{Bid}_{i,t}
++ w_e \mathrm{Elo}_i
++ w_g \mathrm{GraphTrust}_i \notag\\
+&+ w_{\mathrm{collab}}\mathrm{Collaboration}_i
++ w_f \mathrm{Factuality}_i
+- w_c \mathrm{Cost}_i
+- w_l \mathrm{Latency}_i
+- w_{\mathrm{unc}}\mathrm{Uncertainty}_i.
+\end{align}
+In the implemented score:
+\begin{align}
+\mathrm{Score}_i =
+&\; 0.20\,\mathrm{Skill}_{i,t}
++0.18\,r_i
++0.16\,\mathrm{UCB}_i
++0.14\,b_{i,t}
++0.12\,\widetilde{\mathrm{Elo}}_i
++0.08\,g_i \notag\\
+&+0.07\,\mathrm{Collaboration}_i
++0.05\,\mathrm{Factuality}_i
+-0.05\,\tilde{c}_i
+-0.05\,\tilde{l}_i
+-0.10\,u_i.
+\end{align}
+Each term is bounded or normalized to keep the score interpretable. Skill match anchors the routing decision in task relevance. Reputation and UCB balance historical trust with exploration. Bid utility captures agent-specific confidence, quality, cost, latency, and risk. Elo provides pairwise strength. Graph trust rewards useful collaborators. Cost, latency, and uncertainty penalize expensive or unreliable choices.

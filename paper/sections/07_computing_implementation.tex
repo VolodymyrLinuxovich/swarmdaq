@@ -1,0 +1,54 @@
+\section{Computing Implementation}
+
+\systemname{} is implemented as a TypeScript system whose data models mirror the mathematical objects above. The central interfaces in \path{src/lib/types.ts} include \texttt{Agent}, \texttt{AgentBid}, \texttt{Task}, \texttt{EvalScore}, \texttt{ReputationChange}, \texttt{SwarmPortfolio}, \texttt{ShapleyContribution}, \texttt{TraceEvent}, \texttt{MathSnapshot}, and \texttt{MissionResult}. The design keeps the market state serializable so that the same objects can be returned through API routes and rendered in the browser.
+
+\subsection{Mission Flow}
+
+The orchestrator in \path{src/lib/orchestrator.ts} implements one full mission as follows:
+
+\begin{algorithm}[t]
+\caption{\systemname{} mission execution}
+\label{alg:mission}
+\begin{algorithmic}[1]
+\Require Mission \(M\), candidate agents \(A\), history \(H_k\)
+\State Reset token accumulator and create mission id
+\State \(T \gets\) PlannerAgent decomposition of \(M\), or static fallback tasks
+\ForAll{non-evaluation tasks \(t\in T\)}
+  \State Collect bids from eligible agents
+  \State Compute UCB scores and graph-trust scores from \(H_k\)
+  \State Compute \marketmaker{} score for each candidate
+  \State Assign \(t\) to highest-scoring agent, with demo-specific learned overrides when applicable
+\EndFor
+\State Add EvaluatorAgent to selected swarm
+\State Execute assigned tasks with Gemini, or deterministic fallback outputs
+\State Evaluate outputs across six dimensions
+\State Update reputation, Beta parameters, Elo, mean reward, wins/losses, and status
+\State Record task memory, collaboration edges, portfolio, pairwise probabilities, and contribution ledger
+\State Return \texttt{MissionResult} and persist \(H_{k+1}\)
+\end{algorithmic}
+\end{algorithm}
+
+The orchestrator also contains explicit repeated-run behavior for the demo. Run 2 pairs ResearchAgent with SourceVerifierAgent after a factuality failure. Run 3 demonstrates over-rotation by forcing SkepticAgent into a pitch task, which improves factuality but damages narrative usefulness. Run 4 recovers by assigning PitchAgent and BuilderAgent to the narrative work while keeping SkepticAgent in a calibrated support role.
+
+\subsection{API and Data Path}
+
+A user submits a mission through the demo page. The browser posts JSON to \path{/api/mission}. The route validates the request and calls \texttt{runMission}. If the orchestrator fails, the route returns a deterministic fallback result rather than surfacing a broken demo. This fallback contains the same \texttt{MissionResult} shape, including run number, selected agents, evaluation scores, reputation changes, portfolio values, Shapley-style contributions, math snapshot, estimated cost, and trace URL.
+
+The frontend then renders the result into multiple inspection panels. The agent registry shows reputation, factuality, Elo, and Bayesian mean. The auction log shows top bids and winners. The \marketmaker{} decision log shows top candidates per task and their component scores. The score panel shows six evaluation dimensions. The contribution ledger shows approximate per-agent contributions. The trust graph displays collaboration changes. The Weave trace panel fetches \path{/api/traces} and displays call count, token totals, and latency when credentials are available.
+
+\subsection{Deterministic Fallbacks}
+
+Two fallback mechanisms are intentionally part of the computing design. First, if Gemini credentials are absent, \path{src/lib/gemini.ts} returns deterministic outputs for the demo tasks and run contexts. Second, if the orchestrator throws an error, \path{/api/mission} returns a deterministic full result. These fallbacks ensure that the public demo remains usable without secret keys. They also mean that demo values should be interpreted as illustrative internal behavior unless produced by a credentialed live run and reported with trace evidence.
+
+\subsection{Trace and Memory Layers}
+
+The trace layer creates structured events for mission receipt, planning, bidding, selection, execution, evaluation, reputation update, and final synthesis. With \texttt{WANDB\_API\_KEY}, Weave initialization and Gemini wrapping are attempted; without it, local trace storage preserves the application-level event flow. This follows the Weave role as an observability and evaluation platform for LLM applications \citep{wandbweave2026}.
+
+The memory layer uses Upstash Redis when \texttt{UPSTASH\_REDIS\_REST\_URL} and \texttt{UPSTASH\_REDIS\_REST\_TOKEN} are configured. Otherwise, in-memory maps store agents, task memory, mission history, and run count. The route \path{/api/reset-demo} resets these stores and the graph-trust state, enabling repeatable demonstrations.
+
+\begin{figure}[t]
+\centering
+\resizebox{0.86\linewidth}{!}{\paperinput{figures/reputation_loop_placeholder.tex}}
+\caption{Reputation update loop. Evaluation outcomes update Beta reputation, Elo, contribution estimates, graph trust, and memory. The next mission consumes this updated state during bidding and selection.}
+\label{fig:reputation-loop}
+\end{figure}

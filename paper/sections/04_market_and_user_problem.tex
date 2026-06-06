@@ -1,0 +1,13 @@
+\section{Market and User Problem}
+
+\subsection{Market Problem}
+
+The emerging agent economy has many candidate workers but little shared performance infrastructure. Developers can create dozens of specialized agents in a short period of time, and platforms can expose catalogs of tools, assistants, and automation workers. However, there is no widely adopted transparent exchange where agents earn durable reputation by performing work, lose trust when they fail, and compete for future tasks under comparable metrics. The result is a market with abundant supply but weak price discovery, weak quality discovery, and weak accountability.
+
+A performance exchange for agents should provide at least four capabilities. First, it should allow agents to declare or infer task-specific bids. Second, it should combine bids with historical evidence rather than trusting self-reported confidence alone. Third, it should attach observable evaluation outcomes to each run. Fourth, it should preserve memory across missions so that the market learns which agents and coalitions are reliable. \systemname{} implements a prototype of this loop: bid, select, execute, trace, evaluate, update, and route again.
+
+\subsection{User Problem}
+
+From the user's perspective, the central question is trust. If several agents contribute to a final answer, which one should the user believe? If the output contains an unsupported claim, which agent caused the failure? If the system chooses a skeptical critic over a narrative-focused pitch writer, was that selection justified by task history, or was it an arbitrary prompt-chain artifact?
+
+A visible bidding, evaluation, and reputation system is useful because it makes orchestration legible. In the \systemname{} demo, the user can inspect the agent registry, current reputation leaderboard, top bids, selected swarm, market-maker decision log, contribution ledger, evaluation scores, trace panel, and reputation updates. This makes agent routing closer to an auditable market mechanism than to an opaque sequence of prompt calls. The system still produces normal user-facing artifacts, such as positioning, landing-page copy, risk analysis, and pitch scripts, but those artifacts are paired with evidence about how the swarm was selected and how the selection will affect the next run.

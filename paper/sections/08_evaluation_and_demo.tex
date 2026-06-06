@@ -1,0 +1,36 @@
+\section{Evaluation and Demo}
+
+\systemname{} does not yet report external benchmark results. The repository and live demo instead implement a repeated-run demonstration that shows the intended learning loop. The values below are internal demo values from the code path and deterministic fallback. They are useful for explaining system behavior, but they should not be read as production metrics or peer-reviewed benchmark claims.
+
+\begin{table}[t]
+\centering
+\caption{Internal repeated-run demo values. Scores are illustrative values encoded in the demo/orchestrator path, not external benchmark results.}
+\label{tab:demo-runs}
+\begin{tabular}{p{0.12\linewidth}p{0.42\linewidth}ccc}
+\toprule
+Run & Demonstrated behavior & Overall & Factuality & Portfolio objective \\
+\midrule
+1 & Unsupported market-size claim is detected; ResearchAgent is penalized. & 74 & 68 & 0.61 \\
+2 & SourceVerifierAgent is promoted and paired with research; factuality improves. & 91 & 94 & 0.84 \\
+3 & SkepticAgent over-rotates into narrative work; factuality stays high but usefulness regresses. & 85 & 96 & 0.72 \\
+4 & Calibrated recovery: PitchAgent and BuilderAgent lead narrative work while SkepticAgent supports risk framing. & 96 & 95 & 0.94 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The demo begins with a mission asking the swarm to build a launch plan for an AI product that helps students turn messy research into a demo-ready hackathon project. In run 1, ResearchAgent produces an unsupported market-size claim. EvaluatorAgent detects the issue, ResearchAgent loses reputation, and SourceVerifierAgent is identified as a required collaborator for future research tasks.
+
+In run 2, the market learns from this penalty. SourceVerifierAgent is promoted and paired with ResearchAgent. The demo score rises from 74 to 91, factuality rises from 68 to 94, and the portfolio objective rises from 0.61 to 0.84. This is the cleanest demonstration of the intended self-improvement loop: evaluation changes memory, and memory changes routing.
+
+Run 3 is intentionally not monotonic. The system over-corrects by giving SkepticAgent excessive influence over narrative work. The resulting pitch opens with risk framing instead of an emotional hook. Factuality remains high, but usefulness and actionability decline; the overall score falls to 85. This regression is important because it shows that a learning market can over-optimize one dimension and harm another.
+
+Run 4 demonstrates calibrated recovery. PitchAgent returns to lead pitch work, BuilderAgent strengthens product narrative, and SkepticAgent contributes risk analysis without dominating the pitch. The demo reaches a score of 96, and the portfolio objective rises to 0.94. In the dashboard, this arc is visible through score panels, reputation deltas, MarketMaker decisions, contribution ledgers, and the trust graph.
+
+\begin{figure}[t]
+\centering
+\resizebox{0.95\linewidth}{!}{\paperinput{figures/dashboard_placeholder.tex}}
+\caption{Dashboard/demo flow. The live interface exposes the mission, selected agents, bids, scores, reputation changes, trace summaries, and a four-run learning timeline.}
+\label{fig:dashboard}
+\end{figure}
+
+The repository also contains a benchmark-suite page that runs five mission prompts through \path{/api/mission}: market sizing, go-to-market strategy, risk analysis, pitch script, and product positioning. This page is best understood as a demonstration harness. It exercises the same route and visualizes dimension-level scores and estimated costs, but it does not currently compare against external datasets, independent human labels, or alternative orchestration baselines.
