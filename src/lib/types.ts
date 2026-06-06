@@ -46,6 +46,7 @@ export interface AgentBid {
   reason: string;
   clearingPrice?: number;
   isWinner?: boolean;
+  priceAnomaly?: PriceAnomalyInsight;
 }
 
 export interface Task {
@@ -135,13 +136,42 @@ export interface MarketDecisionEntry {
     agentId: string;
     agentName: string;
     compositeScore: number;
+    finalScore?: number;
     skillMatch: number;
     bayesianMean: number;
     ucb: number;
+    ucbScore?: number;
+    elo?: number;
     graphTrust: number;
+    collaboration?: number;
+    confidence?: number;
+    costPenalty?: number;
+    latencyPenalty?: number;
+    uncertaintyPenalty?: number;
     bidUtility?: number;
+    priceAnomaly?: PriceAnomalyInsight;
     reason?: string;
   }>;
+}
+
+export interface PriceAnomalyInsight {
+  label: "UNDERPRICED_AGENT" | "OVERPRICED_AGENT" | "MARKET_SPIKE" | "MARKET_CRASH" | "NORMAL_PRICE" | "INSUFFICIENT_HISTORY";
+  percentile: number | null;
+  pValue: number | null;
+  anomalyScore: number;
+  sampleSize: number;
+  historicalMedian: number | null;
+  historicalP90: number | null;
+  historicalP95: number | null;
+  historicalP99: number | null;
+  explanation?: {
+    summary: string;
+    marketInterpretation: string;
+    riskLevel: "low" | "medium" | "high";
+    isJustified: boolean;
+    recommendedAction: string;
+    judgeFriendlyExplanation: string;
+  };
 }
 
 export interface RunCost {

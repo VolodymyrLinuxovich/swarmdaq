@@ -7,15 +7,18 @@
  *   swarmdaq:events:{id}            LIST        — append-only mission event log
  *   swarmdaq:market:feed            LIST        — rolling window of market events (100 max)
  *   swarmdaq:agent:{id}:history     LIST        — per-agent score history (20 entries)
- *   swarmdaq:lb:reputation          SORTED SET  — leaderboard by reputation
- *   swarmdaq:lb:bayesian            SORTED SET  — leaderboard by Bayesian mean
- *   swarmdaq:lb:elo                 SORTED SET  — leaderboard by Elo
- *   swarmdaq:lb:uncertainty         SORTED SET  — leaderboard by (1 - uncertainty) so low = bottom
+ *   swarmdaq:agent:leaderboard:*    SORTED SET  — reputation, Elo, factuality, market value
+ *   swarmdaq:stream:market-events   STREAM      — append-only market event ledger
+ *   swarmdaq:tdigest:*              TDIGEST/LIST — percentile market intelligence
  */
 
 import { redis, KEY } from "./redis";
 import type { MissionResult, Agent } from "./types";
 import { addTDigestValue } from "./tdigest";
+import { updateAgentLeaderboards } from "./redis/reputation";
+import { clearInMemoryStreams } from "./redis/streams";
+import { clearInMemoryAnomalies } from "./market/price-anomaly";
+import { resetLocalTDigestFallback } from "./tdigest";
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -264,15 +267,7 @@ export async function getAgentHistory(agentId: string, limit = 10): Promise<Agen
 // ── Leaderboard management ─────────────────────────────────────────────────────
 
 export async function updateLeaderboards(agent: Agent): Promise<void> {
-  if (!redis) return;
-  try {
-    await Promise.all([
-      redis.zadd(KEY.lbReputation,   { score: agent.reputation,             member: agent.id }),
-      redis.zadd(KEY.lbBayesian,     { score: agent.bayesianMean * 1000,    member: agent.id }),
-      redis.zadd(KEY.lbElo,          { score: agent.elo,                    member: agent.id }),
-      redis.zadd(KEY.lbUncertainty,  { score: (1 - agent.uncertainty) * 100, member: agent.id }), // invert: high score = low uncertainty
-    ]);
-  } catch (e) { console.error("[redis] updateLeaderboards:", e); }
+  await updateAgentLeaderboards(agent);
 }
 
 // ── Market memory summary ─────────────────────────────────────────────────────
@@ -351,6 +346,9 @@ export async function getRunComparison(runA: number, runB: number): Promise<{
 // ── Redis clear (add mission artifacts to reset) ──────────────────────────────
 
 export async function clearMarketHistory(): Promise<void> {
+  clearInMemoryStreams();
+  clearInMemoryAnomalies();
+  resetLocalTDigestFallback();
   if (!redis) {
     inMemMissions.clear();
     inMemMissionOrder.length = 0;
@@ -361,6 +359,7 @@ export async function clearMarketHistory(): Promise<void> {
   }
   try {
     const missionIds = await redis.zrange(KEY.missionsIndex, 0, -1) as string[];
+    const taskTypes = ["market_research", "positioning", "landing_page_copy", "pitch_script", "risk_review", "final_eval"];
     const keysToDelete = [
       KEY.missionsIndex,
       KEY.marketFeed,
@@ -368,8 +367,23 @@ export async function clearMarketHistory(): Promise<void> {
       KEY.lbBayesian,
       KEY.lbElo,
       KEY.lbUncertainty,
+      KEY.agentLeaderboardFactuality,
+      KEY.agentLeaderboardMarketValue,
+      KEY.streamMarketEvents,
+      KEY.streamEvaluations,
+      KEY.anomaliesIndex,
+      KEY.tdigestPriceGlobal,
+      KEY.tdigestLatencyGlobal,
+      KEY.tdigestScoreDeltaGlobal,
+      KEY.tdigestCostQualityGlobal,
+      KEY.tdScoreOverall,
+      ...taskTypes.flatMap((taskType) => [
+        KEY.tdigestPriceTask(taskType),
+        KEY.tdigestBidPriceTask(taskType),
+      ]),
       ...missionIds.map((id) => KEY.mission(id)),
       ...missionIds.map((id) => KEY.missionEvents(id)),
+      ...Array.from({ length: 20 }, (_, i) => KEY.anomaly(`run-${i + 1}`)),
     ];
     if (keysToDelete.length > 0) await redis.del(...keysToDelete);
   } catch (e) { console.error("[redis] clearMarketHistory:", e); }

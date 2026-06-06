@@ -2,6 +2,7 @@ import { Agent, MissionResult } from "./types";
 import { DEFAULT_AGENTS } from "./agents";
 import { redis, KEY } from "./redis";
 import { updateLeaderboards } from "./marketHistory";
+import { deleteAgentState, readAgentState, writeAgentState } from "./redis/reputation";
 
 // ── In-memory fallback (no Redis env) ────────────────────────────────────────
 let agentStore: Map<string, Agent> = new Map();
@@ -23,7 +24,7 @@ export async function getCustomAgents(): Promise<Agent[]> {
     try {
       const ids = await redis.lrange<string>(KEY.customAgentsList, 0, -1);
       if (!ids.length) return [];
-      const agents = await Promise.all(ids.map((id) => redis!.get<Agent>(KEY.agent(id))));
+      const agents = await Promise.all(ids.map((id) => readAgentState(id)));
       return agents.filter((a): a is Agent => a !== null);
     } catch (e) { console.error("[redis] getCustomAgents:", e); }
   }
@@ -33,7 +34,7 @@ export async function getCustomAgents(): Promise<Agent[]> {
 export async function addCustomAgent(agent: Agent): Promise<void> {
   if (redis) {
     try {
-      await redis.set(KEY.agent(agent.id), agent);
+      await writeAgentState(agent);
       await redis.lpush(KEY.customAgentsList, agent.id);
       return;
     } catch (e) { console.error("[redis] addCustomAgent:", e); }
@@ -44,7 +45,7 @@ export async function addCustomAgent(agent: Agent): Promise<void> {
 export async function removeCustomAgent(agentId: string): Promise<void> {
   if (redis) {
     try {
-      await redis.del(KEY.agent(agentId));
+      await deleteAgentState(agentId);
       await redis.lrem(KEY.customAgentsList, 0, agentId);
       return;
     } catch (e) { console.error("[redis] removeCustomAgent:", e); }
@@ -58,8 +59,13 @@ export async function getAgents(): Promise<Agent[]> {
     try {
       const defaults: Agent[] = [];
       for (const def of DEFAULT_AGENTS) {
-        const stored = await redis.get<Agent>(KEY.agent(def.id));
-        defaults.push(stored ?? def);
+        const stored = await readAgentState(def.id, def);
+        if (stored) {
+          defaults.push(stored);
+        } else {
+          defaults.push(def);
+          void writeAgentState(def).catch(() => {});
+        }
       }
       return [...defaults, ...custom];
     } catch (e) { console.error("[redis] getAgents:", e); }
@@ -70,7 +76,10 @@ export async function getAgents(): Promise<Agent[]> {
 
 export async function getAgent(id: string): Promise<Agent | null> {
   if (redis) {
-    try { return await redis.get<Agent>(KEY.agent(id)); } catch {}
+    try {
+      const fallback = DEFAULT_AGENTS.find((a) => a.id === id);
+      return (await readAgentState(id, fallback)) ?? fallback ?? null;
+    } catch {}
   }
   initStore();
   return agentStore.get(id) ?? null;
@@ -79,9 +88,9 @@ export async function getAgent(id: string): Promise<Agent | null> {
 export async function updateAgent(agentId: string, patch: Partial<Agent>): Promise<Agent> {
   if (redis) {
     try {
-      const existing = (await redis.get<Agent>(KEY.agent(agentId))) ?? DEFAULT_AGENTS.find((a) => a.id === agentId)!;
+      const existing = (await readAgentState(agentId, DEFAULT_AGENTS.find((a) => a.id === agentId))) ?? DEFAULT_AGENTS.find((a) => a.id === agentId)!;
       const updated = { ...existing, ...patch };
-      await redis.set(KEY.agent(agentId), updated);
+      await writeAgentState(updated);
       // Keep all leaderboard dimensions in sync whenever an agent is updated
       await updateLeaderboards(updated);
       return updated;
@@ -167,7 +176,12 @@ export async function resetDemo(): Promise<void> {
         KEY.runCount,
         KEY.lastMission,
         KEY.customAgentsList,
-        "swarmdaq:leaderboard",
+        KEY.agentLeaderboardReputation,
+        KEY.agentLeaderboardElo,
+        KEY.agentLeaderboardFactuality,
+        KEY.agentLeaderboardBayesian,
+        KEY.agentLeaderboardUncertainty,
+        KEY.agentLeaderboardMarketValue,
         ...DEFAULT_AGENTS.map((a) => KEY.agent(a.id)),
         ...customIds.map((id) => KEY.agent(id)),
       ];

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { normalizeElo } from "../math/reputation";
 import { weightedSum, clamp01 } from "../math/agentMath";
+import { computeMarketMakerScore } from "../market/scoring";
 
 describe("normalizeElo", () => {
   it("returns 0 for elo=1200 (lower bound)", () => {
@@ -87,5 +88,41 @@ describe("clamp01", () => {
 
   it("clamps values > 1 to 1", () => {
     expect(clamp01(1.5)).toBe(1);
+  });
+});
+
+describe("MarketMaker price handling", () => {
+  it("does not automatically reject high-price agents when quality signals justify the premium", () => {
+    const premiumExpert = computeMarketMakerScore({
+      skillMatch: 1,
+      bayesianMean: 0.92,
+      ucbScore: 0.7,
+      bidUtility: 0.78,
+      elo: normalizeElo(1560),
+      graphTrust: 0.82,
+      collaboration: 0.88,
+      confidence: 0.95,
+      costPenalty: 1,
+      latencyPenalty: 0.35,
+      uncertaintyPenalty: 0.05,
+      priceAnomaly: 0.72,
+    });
+
+    const cheapWeakAgent = computeMarketMakerScore({
+      skillMatch: 1,
+      bayesianMean: 0.52,
+      ucbScore: 0.7,
+      bidUtility: 0.65,
+      elo: normalizeElo(1360),
+      graphTrust: 0.42,
+      collaboration: 0.45,
+      confidence: 0.55,
+      costPenalty: 0.1,
+      latencyPenalty: 0.35,
+      uncertaintyPenalty: 0.2,
+      priceAnomaly: 0.5,
+    });
+
+    expect(premiumExpert).toBeGreaterThan(cheapWeakAgent);
   });
 });

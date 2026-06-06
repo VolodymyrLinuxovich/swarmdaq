@@ -91,20 +91,23 @@ cost = input * $0.075/1M + output * $0.30/1M
     title: "Redis Memory",
     color: "#dc382d",
     icon: "💾",
-    body: "Agent state persists across cold starts via Upstash Redis (HTTP REST — works in Vercel serverless, no TCP connections). Agent records, reputation scores, Elo ratings, and Bayesian posteriors survive across visitors and deployments. Without credentials, an in-memory store provides full functionality with identical API.",
+    body: "Agent state persists across cold starts via Upstash Redis (HTTP REST — works in Vercel serverless, no TCP connections). Redis Hashes store agent reputation snapshots, Sorted Sets power leaderboards, Streams preserve market events, and t-digest or rolling quantiles model price/latency anomalies. Without credentials, an in-memory store provides full functionality with identical API.",
     code: `// Upstash Redis (HTTP REST, no TCP — serverless-safe)
 import { Redis } from "@upstash/redis"
 const redis = new Redis({ url: UPSTASH_REDIS_REST_URL, token: UPSTASH_REDIS_REST_TOKEN })
 
 // Key schema
-swarmdaq:agent:{id}       → JSON Agent object
-swarmdaq:leaderboard      → sorted set (score = reputation)
-swarmdaq:mem:{type}:{id}  → { score, count } task memory
-swarmdaq:runCount         → integer
+swarmdaq:agent:{id}                         → HASH reputation snapshot
+swarmdaq:agent:leaderboard:reputation       → sorted set
+swarmdaq:agent:leaderboard:elo              → sorted set
+swarmdaq:stream:market-events               → Redis Stream
+swarmdaq:tdigest:price:global               → TDIGEST or rolling LIST
+swarmdaq:tdigest:price:task:{type}          → TDIGEST or rolling LIST
+swarmdaq:anomaly:{runId}                    → anomaly explanations
 
 // Same API for Redis + in-memory fallback
 getAgents()          → Agent[]
-updateAgent(id, patch) → zadd leaderboard + set agent
+updateAgent(id, patch) → hset agent + zadd leaderboards
 resetDemo()          → del all keys`,
   },
   {

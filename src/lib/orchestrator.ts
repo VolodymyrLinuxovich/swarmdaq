@@ -11,6 +11,7 @@ import {
   MarketDecisionEntry,
   DeliberationEntry,
   DeliberationRevision,
+  PriceAnomalyInsight,
 } from "./types";
 import { getExecMode, type ExecMode } from "./mode";
 import { computeEvalScore } from "./evaluation";
@@ -47,8 +48,19 @@ import {
   recordCollaboration,
 } from "./math/graphTrust";
 import { computeContributionLedger } from "./math/contribution";
-import { normalize, clamp01, weightedSum } from "./math/agentMath";
+import { normalize, clamp01 } from "./math/agentMath";
 import type { StreamEvent } from "./types";
+import { appendEvaluationEvent, appendMarketEvent } from "./redis/streams";
+import {
+  computePriceAnomaly,
+  priceAnomalyRankingSignal,
+  recordBidPrice,
+  recordClearingPrice,
+  recordEvaluationMarketMetrics,
+  storeMarketAnomaly,
+} from "./market/price-anomaly";
+import { contextualizeMarketAnomaly } from "./market/anomaly-contextualizer";
+import { computeMarketMakerScore, type MarketScoreComponents } from "./market/scoring";
 
 // ── Seeded demo arc data (only used in SEEDED_DEMO mode) ─────────────────────
 const SEEDED_SCORES: Record<number, EvalScore> = {
@@ -95,26 +107,22 @@ const TASK_AGENT_AFFINITY: Record<string, string[]> = {
 };
 /* eslint-enable @typescript-eslint/no-unused-vars */
 
-function computeMarketMakerScore(
-  agent: Agent,
-  skillMatch: number,
-  ucbScore: number,
-  utilityBid: number,
-  graphTrust: number
-): number {
-  return weightedSum([
-    { weight: 0.20, value: skillMatch },
-    { weight: 0.18, value: agent.bayesianMean },
-    { weight: 0.16, value: ucbScore },
-    { weight: 0.14, value: utilityBid },
-    { weight: 0.12, value: normalizeElo(agent.elo) },
-    { weight: 0.08, value: graphTrust },
-    { weight: 0.07, value: agent.collaboration },
-    { weight: 0.05, value: agent.factuality },
-    { weight: -0.05, value: normalize(agent.price, 0, 0.10) },
-    { weight: -0.05, value: normalize(agent.latencyAvg, 0, 3) },
-    { weight: -0.10, value: agent.uncertainty },
-  ]);
+function toPriceAnomalyInsight(anomaly: Awaited<ReturnType<typeof computePriceAnomaly>>): PriceAnomalyInsight {
+  return {
+    label: anomaly.label,
+    percentile: anomaly.percentile,
+    pValue: anomaly.pValue,
+    anomalyScore: anomaly.anomalyScore,
+    sampleSize: anomaly.sampleSize,
+    historicalMedian: anomaly.historicalMedian,
+    historicalP90: anomaly.historicalP90,
+    historicalP95: anomaly.historicalP95,
+    historicalP99: anomaly.historicalP99,
+  };
+}
+
+function taskComplexity(task: Task): number {
+  return clamp01(task.requiredSkills.length / 4 + task.description.length / 500);
 }
 
 async function selectAgentForTask(
@@ -122,7 +130,9 @@ async function selectAgentForTask(
   agents: Agent[],
   totalRuns: number,
   runNum: number,
-  mode: ExecMode
+  mode: ExecMode,
+  missionId: string,
+  recentEvalScore?: number
 ): Promise<{ agent: Agent; bids: AgentBid[]; decisionEntry: MarketDecisionEntry }> {
   // Compute UCB scores
   const ucbMap: Record<string, number> = {};
@@ -139,9 +149,31 @@ async function selectAgentForTask(
       !["evaluator", "market_maker", "reputation", "planner"].includes(a.id)
   );
   const bids = runAuction(eligibleAgents, task.id, task.requiredSkills);
+  for (const bid of bids) {
+    const anomaly = await computePriceAnomaly({ price: bid.cost, taskType: task.type, metric: "bid" });
+    bid.priceAnomaly = toPriceAnomalyInsight(anomaly);
+    await recordBidPrice(task.type, bid.cost);
+    await appendMarketEvent({
+      runId: `run-${runNum}`,
+      missionId,
+      taskId: task.id,
+      agentId: bid.agentId,
+      eventType: "agent_bid",
+      mode,
+      payload: {
+        taskType: task.type,
+        price: bid.cost,
+        confidence: bid.confidence,
+        expectedQuality: bid.expectedQuality,
+        utilityBid: bid.utilityBid,
+        priceAnomaly: bid.priceAnomaly,
+      },
+    });
+  }
 
   // Normalize skill names to underscore format for matching
   const normalizeSkill = (s: string) => s.replace(/-/g, "_");
+  const complexity = taskComplexity(task);
 
   // Score each candidate
   const scored = eligibleAgents.map((agent) => {
@@ -152,20 +184,77 @@ async function selectAgentForTask(
     const bid = bids.find((b) => b.agentId === agent.id);
     const ucb = ucbMap[agent.id] ?? 0;
     const trust = clamp01((trustMap[agent.id] ?? 0.1) * 5); // normalize PageRank to 0-1
-
-    const score = computeMarketMakerScore(
-      agent,
+    const anomaly = bid?.priceAnomaly;
+    const priceAnomaly = anomaly
+      ? priceAnomalyRankingSignal({ anomaly: { ...anomaly, cdf: null }, agent, taskComplexity: complexity })
+      : 0.5;
+    const components: MarketScoreComponents = {
       skillMatch,
-      ucb,
-      bid?.utilityBid ?? 0,
-      trust
-    );
+      bayesianMean: agent.bayesianMean,
+      ucbScore: ucb,
+      bidUtility: bid?.utilityBid ?? 0,
+      elo: normalizeElo(agent.elo),
+      graphTrust: trust,
+      collaboration: agent.collaboration,
+      confidence: bid?.confidence ?? agent.factuality,
+      costPenalty: normalize(bid?.cost ?? agent.price, 0, 0.10),
+      latencyPenalty: normalize(bid?.latency ?? agent.latencyAvg, 0, 3),
+      uncertaintyPenalty: agent.uncertainty,
+      priceAnomaly,
+    };
 
-    return { agent, score };
+    const score = computeMarketMakerScore(components);
+
+    return { agent, score, components };
   });
 
   // Build decision log for this task (top 3 candidates)
-  const topCandidates = [...scored].sort((a, b) => b.score - a.score).slice(0, 3).map((s) => {
+  const topThree = [...scored].sort((a, b) => b.score - a.score).slice(0, 3);
+  for (const s of topThree) {
+    const bid = bids.find((b) => b.agentId === s.agent.id);
+    if (!bid?.priceAnomaly || ["NORMAL_PRICE", "INSUFFICIENT_HISTORY"].includes(bid.priceAnomaly.label)) continue;
+    const clearingPrice = bid.clearingPrice ?? bid.cost;
+    const explanation = await contextualizeMarketAnomaly({
+      taskType: task.type,
+      selectedAgent: s.agent,
+      bidPrice: bid.cost,
+      clearingPrice,
+      anomaly: { ...bid.priceAnomaly, cdf: null },
+      recentEvalScore,
+      taskComplexity: complexity,
+    });
+    bid.priceAnomaly.explanation = explanation;
+    await storeMarketAnomaly({
+      ...bid.priceAnomaly,
+      timestamp: Date.now(),
+      runId: `run-${runNum}`,
+      missionId,
+      taskType: task.type,
+      agentId: s.agent.id,
+      agentName: s.agent.name,
+      price: bid.cost,
+      clearingPrice,
+      explanation: explanation.summary,
+      cdf: null,
+    });
+    await appendMarketEvent({
+      runId: `run-${runNum}`,
+      missionId,
+      taskId: task.id,
+      agentId: s.agent.id,
+      eventType: "anomaly_detected",
+      mode,
+      payload: {
+        taskType: task.type,
+        price: bid.cost,
+        clearingPrice,
+        priceAnomaly: bid.priceAnomaly,
+        explanation,
+      },
+    });
+  }
+
+  const topCandidates = topThree.map((s) => {
     const skillMatch = task.requiredSkills.map(normalizeSkill).filter((sk) => s.agent.skills.map(normalizeSkill).includes(sk)).length / Math.max(task.requiredSkills.length, 1);
     const ucb = ucbMap[s.agent.id] ?? 0;
     const trust = clamp01((trustMap[s.agent.id] ?? 0.1) * 5);
@@ -174,24 +263,56 @@ async function selectAgentForTask(
       agentId: s.agent.id,
       agentName: s.agent.name,
       compositeScore: parseFloat(s.score.toFixed(4)),
+      finalScore: parseFloat(s.score.toFixed(4)),
       skillMatch: parseFloat(skillMatch.toFixed(3)),
       bayesianMean: parseFloat(s.agent.bayesianMean.toFixed(3)),
       ucb: parseFloat(ucb.toFixed(3)),
+      ucbScore: parseFloat(ucb.toFixed(3)),
+      elo: parseFloat(normalizeElo(s.agent.elo).toFixed(3)),
       graphTrust: parseFloat(trust.toFixed(3)),
+      collaboration: parseFloat(s.agent.collaboration.toFixed(3)),
+      confidence: parseFloat((bid?.confidence ?? s.agent.factuality).toFixed(3)),
+      costPenalty: parseFloat(normalize(bid?.cost ?? s.agent.price, 0, 0.10).toFixed(3)),
+      latencyPenalty: parseFloat(normalize(bid?.latency ?? s.agent.latencyAvg, 0, 3).toFixed(3)),
+      uncertaintyPenalty: parseFloat(s.agent.uncertainty.toFixed(3)),
       bidUtility: parseFloat((bid?.utilityBid ?? 0).toFixed(3)),
-      reason: `skill=${(skillMatch * 100).toFixed(0)}% bayes=${(s.agent.bayesianMean * 100).toFixed(0)}% elo=${Math.round(s.agent.elo)} ucb=${ucb.toFixed(3)}`,
+      priceAnomaly: bid?.priceAnomaly,
+      reason: `skill=${(skillMatch * 100).toFixed(0)}% bayes=${(s.agent.bayesianMean * 100).toFixed(0)}% elo=${Math.round(s.agent.elo)} ucb=${ucb.toFixed(3)} price=${bid?.priceAnomaly?.label ?? "UNKNOWN"}`,
     };
   });
 
-  const makeEntry = (winner: Agent, runnerUp?: Agent): MarketDecisionEntry => ({
-    taskType: task.type,
-    winnerId: winner.id,
-    winnerName: winner.name,
-    candidates: topCandidates,
-    winReason: runnerUp
-      ? `Score advantage: ${(scored.find((s) => s.agent.id === winner.id)?.score ?? 0).toFixed(4)} vs ${(scored.find((s) => s.agent.id === runnerUp.id)?.score ?? 0).toFixed(4)}`
-      : "Top-ranked by MarketMaker composite score",
-  });
+  const makeEntry = async (winner: Agent, runnerUp?: Agent): Promise<MarketDecisionEntry> => {
+    const winnerBid = bids.find((b) => b.agentId === winner.id);
+    const clearingPrice = winnerBid?.clearingPrice ?? bids.find((b) => b.agentId !== winner.id)?.cost ?? winnerBid?.cost ?? winner.price;
+    for (const bid of bids) {
+      bid.isWinner = bid.agentId === winner.id;
+      if (bid.isWinner) bid.clearingPrice = clearingPrice;
+    }
+    await recordClearingPrice(task.type, clearingPrice);
+    await appendMarketEvent({
+      runId: `run-${runNum}`,
+      missionId,
+      taskId: task.id,
+      agentId: winner.id,
+      eventType: "marketmaker_selection",
+      mode,
+      payload: {
+        taskType: task.type,
+        winnerName: winner.name,
+        clearingPrice,
+        topCandidates,
+      },
+    });
+    return {
+      taskType: task.type,
+      winnerId: winner.id,
+      winnerName: winner.name,
+      candidates: topCandidates,
+      winReason: runnerUp
+        ? `Score advantage: ${(scored.find((s) => s.agent.id === winner.id)?.score ?? 0).toFixed(4)} vs ${(scored.find((s) => s.agent.id === runnerUp.id)?.score ?? 0).toFixed(4)}`
+        : "Top-ranked by MarketMaker composite score",
+    };
+  };
 
   // ── SEEDED_DEMO scripted routing ──────────────────────────────────────────
   if (mode === "SEEDED_DEMO") {
@@ -202,24 +323,24 @@ async function selectAgentForTask(
       );
       if (researchPair.length > 0) {
         researchPair.sort((a, b) => b.score - a.score);
-        return { agent: researchPair[0].agent, bids, decisionEntry: makeEntry(researchPair[0].agent) };
+        return { agent: researchPair[0].agent, bids, decisionEntry: await makeEntry(researchPair[0].agent) };
       }
     }
 
     // Run 3: SkepticAgent over-rotated — forces skeptic into pitch_script (the regression)
     if (runNum === 3 && task.type === "pitch_script") {
       const skepticFirst = scored.find((s) => s.agent.id === "skeptic");
-      if (skepticFirst) return { agent: skepticFirst.agent, bids, decisionEntry: makeEntry(skepticFirst.agent) };
+      if (skepticFirst) return { agent: skepticFirst.agent, bids, decisionEntry: await makeEntry(skepticFirst.agent) };
     }
 
     // Run 4: PitchAgent leads pitch, BuilderAgent on copy — balanced recovery
     if (runNum >= 4 && task.type === "pitch_script") {
       const pitchAgent = scored.find((s) => s.agent.id === "pitch");
-      if (pitchAgent) return { agent: pitchAgent.agent, bids, decisionEntry: makeEntry(pitchAgent.agent) };
+      if (pitchAgent) return { agent: pitchAgent.agent, bids, decisionEntry: await makeEntry(pitchAgent.agent) };
     }
     if (runNum >= 4 && task.type === "landing_page_copy") {
       const builderAgent = scored.find((s) => s.agent.id === "builder");
-      if (builderAgent) return { agent: builderAgent.agent, bids, decisionEntry: makeEntry(builderAgent.agent) };
+      if (builderAgent) return { agent: builderAgent.agent, bids, decisionEntry: await makeEntry(builderAgent.agent) };
     }
   }
 
@@ -232,10 +353,10 @@ async function selectAgentForTask(
         s.agent.skills.map(normalizeSkill).includes(sk)
       )
   );
-  if (newcomer) return { agent: newcomer.agent, bids, decisionEntry: makeEntry(newcomer.agent) };
+  if (newcomer) return { agent: newcomer.agent, bids, decisionEntry: await makeEntry(newcomer.agent) };
 
   scored.sort((a, b) => b.score - a.score);
-  return { agent: scored[0].agent, bids, decisionEntry: makeEntry(scored[0].agent, scored[1]?.agent) };
+  return { agent: scored[0].agent, bids, decisionEntry: await makeEntry(scored[0].agent, scored[1]?.agent) };
 }
 
 function computeRepUpdates(
@@ -508,8 +629,16 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
   const totalRuns = await getTotalAgentRuns();
   const runNum = clientRunNumber ?? (await getRunCount()) + 1;
   const lastMission = await getLastMission();
+  const runId = `run-${runNum}`;
 
   await traceEvent({ type: "mission_received", data: { missionId, mission, runNum } });
+  await appendMarketEvent({
+    runId,
+    missionId,
+    eventType: "mission_created",
+    mode,
+    payload: { mission, runNumber: runNum },
+  });
   await appendMissionEvent({ eventType: "mission_received", missionId, runNumber: runNum, timestamp: Date.now(), message: `Mission received: "${mission.slice(0, 80)}"` });
   await appendMarketFeed({ timestamp: Date.now(), eventType: "mission_started", text: `Run #${runNum} started: "${mission.slice(0, 60)}"`, color: "#00aaff" });
   emit({ type: "phase", phase: "planning" });
@@ -520,6 +649,20 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
 
   const tasks = await planTasksForMission(mission);
   emit({ type: "tasks", tasks });
+  for (const task of tasks) {
+    await appendMarketEvent({
+      runId,
+      missionId,
+      taskId: task.id,
+      eventType: "task_created",
+      mode,
+      payload: {
+        taskType: task.type,
+        description: task.description,
+        requiredSkills: task.requiredSkills,
+      },
+    });
+  }
 
   await updateAgent("planner", { status: "done" });
 
@@ -539,7 +682,9 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
       agents,
       totalRuns,
       runNum,
-      mode
+      mode,
+      missionId,
+      lastMission?.evalScore.overall
     );
 
     allBids.push(...bids.slice(0, 3)); // top 3 bids per task
@@ -601,6 +746,18 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
     task.status = "done";
     await updateAgent(agent.id, { status: "done" });
     await appendMissionEvent({ eventType: "agent_completed", missionId, runNumber: runNum, timestamp: Date.now(), agentId: agent.id, agentName: agent.name, message: `${agent.name} completed task: ${task.type}` });
+    await appendMarketEvent({
+      runId,
+      missionId,
+      taskId: task.id,
+      agentId: agent.id,
+      eventType: "task_completed",
+      mode,
+      payload: {
+        taskType: task.type,
+        outputPreview: output.slice(0, 280),
+      },
+    });
     emit({ type: "agent_done", agentId: agent.id, agentName: agent.name, taskType: task.type, output });
   }
 
@@ -644,6 +801,22 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
   }
 
   await updateAgent("evaluator", { status: "done" });
+  await appendEvaluationEvent({
+    runId,
+    missionId,
+    agentId: "evaluator",
+    eventType: "evaluation_completed",
+    mode,
+    payload: { evalScore },
+  });
+  await appendMarketEvent({
+    runId,
+    missionId,
+    agentId: "evaluator",
+    eventType: "evaluation_completed",
+    mode,
+    payload: { evalScore },
+  });
   emit({ type: "phase", phase: "evaluating" });
   emit({ type: "score", evalScore });
 
@@ -720,6 +893,21 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
       role: agent.role,
     });
     await appendMissionEvent({ eventType: "reputation_updated", missionId, runNumber: runNum, timestamp: Date.now(), agentId: upd.id, agentName: agent.name, delta: upd.delta, score: evalScore.overall, message: `Rep ${upd.delta > 0 ? "+" : ""}${upd.delta}: ${upd.reason}` });
+    await appendMarketEvent({
+      runId,
+      missionId,
+      agentId: upd.id,
+      eventType: "reputation_updated",
+      mode,
+      payload: {
+        agentName: agent.name,
+        delta: upd.delta,
+        reason: upd.reason,
+        eloDelta: eloResult.deltaA,
+        newReputation: newRep,
+        bayesianMean: bayesian.bayesianMean,
+      },
+    });
   }
 
   // Update stats for all selected agents not already covered by repUpdates
@@ -885,6 +1073,11 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
   const GEMINI_OUTPUT_RATE = 0.30  / 1_000_000;
   const totalUSD = tokens.input * GEMINI_INPUT_RATE + tokens.output * GEMINI_OUTPUT_RATE;
   const runCost = { inputTokens: tokens.input, outputTokens: tokens.output, totalUSD, model: "gemini-2.5-flash" };
+  await recordEvaluationMarketMetrics({
+    latencyMs: Math.round(selectedAgents.reduce((sum, agent) => sum + agent.latencyAvg, 0) / Math.max(selectedAgents.length, 1) * 1000),
+    scoreDelta: evalScore.overall - (lastMission?.evalScore.overall ?? evalScore.overall),
+    costPerQualityPoint: evalScore.overall > 0 ? totalUSD / evalScore.overall : totalUSD,
+  });
 
   const entity  = process.env.WANDB_ENTITY  ?? "vborysenko-uc-berkeley";
   const project = process.env.WANDB_PROJECT ?? "swarmdaq";
@@ -926,6 +1119,19 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
   emit({ type: "done", result });
   await appendMissionEvent({ eventType: "mission_completed", missionId, runNumber: runNum, timestamp: Date.now(), score: evalScore.overall, message: `Mission complete — score ${evalScore.overall}/100` });
   await appendMarketFeed({ timestamp: Date.now(), eventType: "mission_complete", text: `Run #${runNum} complete — score ${evalScore.overall}/100. Swarm: ${selectedAgents.map((a) => a.name).join(", ")}`, color: evalScore.overall >= 90 ? "#00ff88" : evalScore.overall >= 80 ? "#fbbf24" : "#ef4444" });
+  await appendMarketEvent({
+    runId,
+    missionId,
+    eventType: "run_completed",
+    mode,
+    payload: {
+      runNumber: runNum,
+      score: evalScore.overall,
+      selectedAgents: selectedAgents.map((a) => a.id),
+      totalUSD,
+      marketDecisionLog,
+    },
+  });
 
   return result;
 }

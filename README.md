@@ -196,7 +196,8 @@ Instead of asking an LLM “which agent should do this?”, SwarmDAQ scores each
 - Elo rating
 - graph trust
 - collaboration score
-- factuality
+- bid confidence
+- Redis price anomaly signal
 - cost
 - latency
 - uncertainty
@@ -230,30 +231,68 @@ If W&B credentials are unavailable, SwarmDAQ falls back to in-memory traces so t
 
 ## Redis — Persistent Market Memory
 
-Redis stores the memory that makes SwarmDAQ self-improving.
+Redis is part of the SwarmDAQ market mechanism, not just a key-value cache.
 
 SwarmDAQ uses memory for:
 
-- agent reputation
-- Bayesian alpha / beta trust values
-- Elo ratings
-- task-specific success rates
-- collaboration edges
-- leaderboard state
-- previous mission results
-- run-to-run improvement summaries
+- **Agent reputation memory:** `swarmdaq:agent:{agentId}` Redis Hashes store reputation, Elo, Bayesian alpha/beta, factuality, latency, cost, wins/losses, uncertainty, and last update time.
+- **Leaderboards:** Redis Sorted Sets rank agents by reputation, Elo, factuality, Bayesian trust, uncertainty, and composite market value.
+- **Market event logs:** Redis Streams append bids, selections, evaluations, reputation updates, failures, anomalies, and run completion events.
+- **Task clearing prices:** clearing prices are recorded by task type and globally, then fed into percentile models.
+- **t-digest price intelligence:** `TDIGEST.*` commands track bid prices, clearing prices, latency, score deltas, and cost per quality point when supported.
+- **Rolling fallback:** if the Redis provider does not support Redis Stack t-digest commands, SwarmDAQ stores rolling samples in Redis lists and computes approximate quantiles in TypeScript.
+- **LLM anomaly context:** anomalous price patterns are explained in judge-friendly language with deterministic fallback if the LLM fails.
 
-Example memory keys:
+Core Redis keys:
 
 ```text
-agent:{id}
-agent:leaderboard
-memory:{taskType}:{agentId}
-mission:{missionId}
-traces:{missionId}
+swarmdaq:agent:{agentId}                         # HASH
+swarmdaq:agent:leaderboard:reputation            # SORTED SET
+swarmdaq:agent:leaderboard:elo                   # SORTED SET
+swarmdaq:agent:leaderboard:factuality            # SORTED SET
+swarmdaq:agent:leaderboard:market-value          # SORTED SET
+swarmdaq:mission:{missionId}                     # STRING
+swarmdaq:run:{runId}                             # reserved run namespace
+swarmdaq:stream:market-events                    # STREAM
+swarmdaq:stream:evaluations                      # STREAM
+swarmdaq:tdigest:price:global                    # TDIGEST or fallback LIST
+swarmdaq:tdigest:price:task:{taskType}           # TDIGEST or fallback LIST
+swarmdaq:tdigest:latency:global                  # TDIGEST or fallback LIST
+swarmdaq:tdigest:score-delta:global              # TDIGEST or fallback LIST
+swarmdaq:anomaly:{runId}                         # LIST
 ```
 
-This means the system does not reset intelligence after every run. It carries forward what it learned.
+For a price `x`, SwarmDAQ estimates:
+
+```text
+cdf = fraction of historical prices <= x
+upperTail = 1 - cdf
+lowerTail = cdf
+twoSidedP = 2 * min(lowerTail, upperTail)
+anomalyScore = 1 - twoSidedP
+```
+
+Price labels are:
+
+```text
+UNDERPRICED_AGENT
+OVERPRICED_AGENT
+MARKET_SPIKE
+MARKET_CRASH
+NORMAL_PRICE
+INSUFFICIENT_HISTORY
+```
+
+This means the system carries forward what it learned, shows how unusual each price is, and avoids blindly rejecting expensive agents when reputation, factuality, or task complexity justify the premium.
+
+Environment variables:
+
+```env
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+```
+
+Put real values in `.env.local`. Never commit `.env.local` or secrets.
 
 ---
 
@@ -384,17 +423,18 @@ The trust graph helps identify useful collaboration hubs, such as a SourceVerifi
 
 ```text
 finalScore =
-  0.20 * skillMatch
-+ 0.18 * bayesianMean
-+ 0.16 * ucb1Score
-+ 0.14 * utilityBid
-+ 0.12 * normalizedElo
-+ 0.08 * graphTrust
-+ 0.07 * collaboration
-+ 0.05 * factuality
+  0.18 * skillMatch
++ 0.15 * bayesianMean
++ 0.14 * ucb1Score
++ 0.12 * utilityBid
++ 0.10 * normalizedElo
++ 0.07 * graphTrust
++ 0.06 * collaboration
++ 0.05 * bidConfidence
++ 0.05 * priceAnomalySignal
 - 0.05 * normalizedCost
-- 0.05 * normalizedLatency
-- 0.10 * uncertainty
+- 0.04 * normalizedLatency
+- 0.09 * uncertainty
 ```
 
 This is the core reason SwarmDAQ feels different from a normal agent demo.
@@ -422,6 +462,7 @@ The SwarmDAQ dashboard includes:
 - Agent Studio for deploying custom agents
 - CopilotKit generative UI sidebar
 - architecture page
+- Redis Market Intelligence panel with event count, t-digest status, price percentiles, anomaly labels, p-values, and explanations
 - demo page (mobile-responsive, iPhone 15 safe-area aware)
 
 The UI is designed to make the market visible. You can watch agents compete, win, fail, recover, and improve.

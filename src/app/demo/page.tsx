@@ -9,6 +9,7 @@ import { AGENT_PROVIDER, PROVIDER_COLORS } from "@/lib/providers-config";
 import type { TraceSummary } from "@/app/api/traces/route";
 import { getAgentLabel } from "@/components/copilot/WeakAgentCard";
 import type { MissionSummary, MarketFeedEvent, MissionEvent } from "@/lib/marketHistory";
+import type { MarketIntelligenceResponse } from "@/app/api/market/intelligence/route";
 
 const DEFAULT_MISSION =
   "Build a launch plan for an AI product that helps students turn messy research into a demo-ready hackathon project. Include market positioning, landing page copy, risk analysis, and a 90-second pitch.";
@@ -585,6 +586,23 @@ function MarketDecisionLog({ log }: { log: MarketDecisionEntry[] }) {
                     <span>ucb {c.ucb.toFixed(2)}</span>
                     <span>trust {c.graphTrust.toFixed(2)}</span>
                   </div>
+                  {c.priceAnomaly && (
+                    <div className="pl-6 flex flex-wrap gap-2 text-slate-700">
+                      <span className="text-amber-500">{c.priceAnomaly.label.replace(/_/g, " ")}</span>
+                      <span>pct {c.priceAnomaly.percentile ?? "n/a"}</span>
+                      <span>p {c.priceAnomaly.pValue ?? "n/a"}</span>
+                      {c.priceAnomaly.explanation?.riskLevel && (
+                        <span className={c.priceAnomaly.explanation.riskLevel === "high" ? "text-red-500" : c.priceAnomaly.explanation.riskLevel === "medium" ? "text-amber-500" : "text-green-500"}>
+                          {c.priceAnomaly.explanation.riskLevel} risk
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {c.priceAnomaly?.explanation?.judgeFriendlyExplanation && (
+                    <div className="pl-6 text-slate-600 leading-relaxed">
+                      {c.priceAnomaly.explanation.judgeFriendlyExplanation}
+                    </div>
+                  )}
                 </div>
               ))}
             </motion.div>
@@ -647,6 +665,74 @@ function WeaveTracePanel({ traces, loading }: { traces: TraceSummary | null; loa
             open full trace explorer ↗
           </a>
         </>
+      )}
+    </div>
+  );
+}
+
+function MarketIntelligencePanel({ intelligence }: { intelligence: MarketIntelligenceResponse | null }) {
+  const anomaly = intelligence?.recentAnomalies[0];
+  const statusColor = intelligence?.redisEnabled ? "#00ff88" : "#fbbf24";
+  const tdigestColor = intelligence?.tdigestEnabled ? "#22d3ee" : intelligence?.redisEnabled ? "#fbbf24" : "#64748b";
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-2 mb-3 text-xs font-mono">
+        <div className="border border-slate-900 rounded p-2">
+          <div className="text-slate-700 uppercase tracking-wider">Market Memory</div>
+          <div className="font-bold mt-1" style={{ color: statusColor }}>
+            Redis {intelligence?.redisEnabled ? "Enabled" : "Fallback"}
+          </div>
+        </div>
+        <div className="border border-slate-900 rounded p-2">
+          <div className="text-slate-700 uppercase tracking-wider">Market Events</div>
+          <div className="font-bold mt-1 text-green-400">{intelligence?.totalEvents ?? 0}</div>
+        </div>
+        <div className="border border-slate-900 rounded p-2">
+          <div className="text-slate-700 uppercase tracking-wider">t-digest</div>
+          <div className="font-bold mt-1" style={{ color: tdigestColor }}>
+            {intelligence?.tdigestMode ?? "loading"}
+          </div>
+        </div>
+        <div className="border border-slate-900 rounded p-2">
+          <div className="text-slate-700 uppercase tracking-wider">Price p95</div>
+          <div className="font-bold mt-1 text-amber-400">
+            {intelligence?.globalPriceStats ? `$${intelligence.globalPriceStats.p95.toFixed(3)}` : "--"}
+          </div>
+        </div>
+      </div>
+
+      {intelligence?.topAgents.length ? (
+        <div className="mb-3">
+          <div className="text-xs text-slate-700 uppercase tracking-wider mb-1">Redis Leaderboard Snapshot</div>
+          <div className="space-y-1">
+            {intelligence.topAgents.slice(0, 3).map((agent, i) => (
+              <div key={agent.id} className="flex items-center gap-2 text-xs font-mono">
+                <span className="text-slate-700 w-4">{i + 1}</span>
+                <span className="flex-1 text-slate-500 truncate">{agent.name}</span>
+                <span className="text-green-400">{agent.reputation}</span>
+                <span className="text-slate-700">elo</span>
+                <span className="text-blue-400">{agent.elo}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {anomaly ? (
+        <div className="border-t border-slate-900 pt-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-slate-700 uppercase tracking-wider">Latest Anomaly</span>
+            <span className="ml-auto text-xs font-bold px-1.5 py-0.5 rounded border border-amber-900/50 text-amber-400">
+              p={anomaly.pValue ?? "n/a"}
+            </span>
+          </div>
+          <div className="text-xs font-bold text-fuchsia-400 mb-1">{anomaly.label.replace(/_/g, " ")}</div>
+          <div className="text-xs text-slate-500 leading-relaxed">
+            {anomaly.explanation ?? `${anomaly.agentName} bid $${anomaly.price.toFixed(3)} at percentile ${anomaly.percentile ?? "unknown"}.`}
+          </div>
+        </div>
+      ) : (
+        <div className="text-xs font-mono text-slate-800">no price anomalies yet — run more market cycles</div>
       )}
     </div>
   );
@@ -1029,6 +1115,7 @@ export default function DemoPage() {
   const [replayMissionId, setReplayMissionId] = useState<string | null>(null);
   const [replayMission, setReplayMission] = useState<MissionResult | null>(null);
   const [replayEvents, setReplayEvents] = useState<MissionEvent[]>([]);
+  const [marketIntelligence, setMarketIntelligence] = useState<MarketIntelligenceResponse | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
   const [deliberationEntries, setDeliberationEntries] = useState<DeliberationEntry[]>([]);
   const [deliberationRevisions, setDeliberationRevisions] = useState<DeliberationRevision[]>([]);
@@ -1055,6 +1142,10 @@ export default function DemoPage() {
     description: "Demo session state",
     value: { runCount, sessionCost, currentMission: mission, phase, fastDemoResults: fastDemoResults.map((r) => ({ runNumber: r.runNumber, overall: r.evalScore.overall })) },
   });
+  useCopilotReadable({
+    description: "Redis-powered market intelligence: event stream totals, t-digest status, price percentiles, top agents, and latest anomalies",
+    value: marketIntelligence,
+  });
 
   const fetchTraces = async () => {
     setTracesLoading(true);
@@ -1067,9 +1158,10 @@ export default function DemoPage() {
 
   const fetchMarketMemory = async () => {
     try {
-      const [histRes, feedRes] = await Promise.all([
+      const [histRes, feedRes, intelRes] = await Promise.all([
         fetch("/api/history?limit=8"),
         fetch("/api/market-feed?limit=12"),
+        fetch("/api/market/intelligence"),
       ]);
       if (histRes.ok) {
         const { missions, total } = await histRes.json() as { missions: MissionSummary[]; total: number };
@@ -1079,6 +1171,9 @@ export default function DemoPage() {
       if (feedRes.ok) {
         const { events } = await feedRes.json() as { events: MarketFeedEvent[] };
         setMarketFeed(events);
+      }
+      if (intelRes.ok) {
+        setMarketIntelligence(await intelRes.json() as MarketIntelligenceResponse);
       }
     } catch {}
   };
@@ -1683,6 +1778,14 @@ export default function DemoPage() {
                 )}
               </div>
               <WeaveTracePanel traces={traceSummary} loading={tracesLoading} />
+            </div>
+
+            <div className="terminal-card p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs text-slate-600 uppercase tracking-wider">Redis Market Intelligence</span>
+                <button onClick={() => void fetchMarketMemory()} className="ml-auto text-xs text-slate-700 hover:text-slate-500 transition-colors">↺</button>
+              </div>
+              <MarketIntelligencePanel intelligence={marketIntelligence} />
             </div>
 
             {/* Market Memory panel */}
