@@ -27,6 +27,7 @@ export const KEY = {
   mission:          (id: string) => `swarmdaq:mission:${id}`,
   missionEvents:    (id: string) => `swarmdaq:events:${id}`,
   marketFeed:       "swarmdaq:market:feed",
+  customAgentsList: "swarmdaq:custom_agents",
 } as const;
 
 export type RedisKey = (typeof KEY)[keyof typeof KEY];

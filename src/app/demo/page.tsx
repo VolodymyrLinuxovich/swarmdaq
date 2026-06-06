@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useCopilotReadable } from "@copilotkit/react-core";
 import type { MissionResult, Agent, AgentBid, ReputationChange, ShapleyContribution, AgentMessage, MarketDecisionEntry, StreamEvent, EvalScore } from "@/lib/types";
@@ -744,6 +744,173 @@ function LiveTicker({ agents, reputationChanges }: { agents: Agent[]; reputation
   );
 }
 
+// ── Agent Studio ──────────────────────────────────────────────────────────────
+
+const STUDIO_SKILLS = [
+  "research", "fact-checking", "writing", "analysis", "risk-assessment",
+  "market-analysis", "pitch-craft", "evaluation", "synthesis", "skepticism",
+  "source-verification", "strategic-planning", "data-analysis", "narrative",
+  "financial-modeling", "technical-review", "competitor-analysis",
+];
+
+const STUDIO_PROVIDERS: Array<{ value: "gemini" | "openai" | "anthropic"; label: string; color: string }> = [
+  { value: "gemini", label: "Gemini 2.5 Flash", color: "#00aaff" },
+  { value: "openai", label: "GPT-4o", color: "#00ff88" },
+  { value: "anthropic", label: "Claude Sonnet", color: "#f97316" },
+];
+
+function AgentStudioModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [skills, setSkills] = useState<string[]>([]);
+  const [provider, setProvider] = useState<"gemini" | "openai" | "anthropic">("gemini");
+  const [reputation, setReputation] = useState(70);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleSkill = (s: string) =>
+    setSkills((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : prev.length < 6 ? [...prev, s] : prev);
+
+  const submit = async () => {
+    if (!name.trim() || !role.trim() || skills.length === 0) {
+      setError("name, role, and at least one skill required");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/agents/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), role: role.trim(), skills, provider, reputation }),
+      });
+      const data = await res.json() as { error?: string };
+      if (!res.ok) { setError(data.error ?? "failed"); return; }
+      onCreated();
+      onClose();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0,0,0,0.85)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        className="w-full max-w-lg border border-green-900/40 rounded bg-black p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-bold text-green-400">Agent Studio</div>
+            <div className="text-xs text-slate-600 mt-0.5">Deploy a custom agent into the live market</div>
+          </div>
+          <button onClick={onClose} className="text-slate-700 hover:text-slate-400 text-lg leading-none">×</button>
+        </div>
+
+        {/* Name */}
+        <div>
+          <label className="text-xs text-slate-600 uppercase tracking-wider block mb-1">Agent Name</label>
+          <input
+            value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. DataScienceAgent"
+            maxLength={40}
+            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-green-700 transition-colors font-mono"
+          />
+        </div>
+
+        {/* Role */}
+        <div>
+          <label className="text-xs text-slate-600 uppercase tracking-wider block mb-1">Role / Expertise</label>
+          <input
+            value={role} onChange={(e) => setRole(e.target.value)}
+            placeholder="e.g. Specializes in data-driven market sizing and TAM analysis"
+            maxLength={120}
+            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-green-700 transition-colors font-mono"
+          />
+        </div>
+
+        {/* Skills */}
+        <div>
+          <label className="text-xs text-slate-600 uppercase tracking-wider block mb-2">
+            Skills <span className="text-slate-700">({skills.length}/6 selected)</span>
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {STUDIO_SKILLS.map((s) => {
+              const active = skills.includes(s);
+              return (
+                <button key={s} onClick={() => toggleSkill(s)}
+                  className="px-2 py-1 rounded text-xs font-mono transition-colors"
+                  style={{
+                    borderWidth: 1, borderStyle: "solid",
+                    borderColor: active ? "#00ff88" : "#1e293b",
+                    color: active ? "#00ff88" : "#475569",
+                    backgroundColor: active ? "rgba(0,255,136,0.08)" : "transparent",
+                  }}>
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Provider */}
+        <div>
+          <label className="text-xs text-slate-600 uppercase tracking-wider block mb-2">LLM Provider</label>
+          <div className="flex gap-2">
+            {STUDIO_PROVIDERS.map((p) => (
+              <button key={p.value} onClick={() => setProvider(p.value)}
+                className="flex-1 py-2 rounded border text-xs font-mono transition-colors"
+                style={{
+                  borderColor: provider === p.value ? p.color : "#1e293b",
+                  color: provider === p.value ? p.color : "#475569",
+                  backgroundColor: provider === p.value ? `${p.color}10` : "transparent",
+                }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Starting reputation */}
+        <div>
+          <label className="text-xs text-slate-600 uppercase tracking-wider block mb-2">
+            Starting Reputation <span className="text-green-500 font-bold">{reputation}</span>
+            <span className="text-slate-700 ml-2">(50–82, market will adjust)</span>
+          </label>
+          <input type="range" min={50} max={82} value={reputation}
+            onChange={(e) => setReputation(Number(e.target.value))}
+            className="w-full accent-green-500" />
+          <div className="flex justify-between text-xs text-slate-700 mt-0.5">
+            <span>50 · WATCH</span><span>66 · HOLD</span><span>82 · BUY candidate</span>
+          </div>
+        </div>
+
+        {error && (
+          <div className="text-xs text-red-400 font-mono border border-red-900/40 rounded px-3 py-2">{error}</div>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="flex-1 py-2 text-xs font-mono border border-slate-800 text-slate-500 rounded hover:border-slate-600 transition-colors">
+            cancel
+          </button>
+          <button onClick={() => void submit()} disabled={submitting}
+            className="flex-1 py-2 text-xs font-black bg-green-500 text-black rounded hover:bg-green-400 disabled:opacity-50 transition-colors">
+            {submitting ? "deploying…" : "⚡ Deploy Agent"}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── Page types ───────────────────────────────────────────────────────────────
 
 type Phase = "idle" | "planning" | "auction" | "executing" | "evaluating" | "updating" | "done";
@@ -783,7 +950,15 @@ export default function DemoPage() {
   const [replayMissionId, setReplayMissionId] = useState<string | null>(null);
   const [replayMission, setReplayMission] = useState<MissionResult | null>(null);
   const [replayEvents, setReplayEvents] = useState<MissionEvent[]>([]);
+  const [studioOpen, setStudioOpen] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
+
+  const deleteCustomAgent = async (agentId: string) => {
+    try {
+      await fetch(`/api/agents/custom/${agentId}`, { method: "DELETE" });
+      await fetchAgentsRef.current();
+    } catch {}
+  };
 
   // ── Expose state to CopilotKit ──────────────────────────────────────────
   useCopilotReadable({
@@ -1163,10 +1338,28 @@ export default function DemoPage() {
           {/* Left: Agent cards */}
           <div className="md:col-span-1 lg:col-span-1">
             <div className="terminal-card p-4">
-              <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">Agent Registry</div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-slate-600 uppercase tracking-wider">Agent Registry</span>
+                <button
+                  onClick={() => setStudioOpen(true)}
+                  className="flex items-center gap-1 px-2 py-1 rounded border border-green-900/50 text-xs font-mono text-green-700 hover:text-green-400 hover:border-green-600 transition-colors"
+                >
+                  + Studio
+                </button>
+              </div>
               <div className="space-y-2">
                 {liveAgents.map((agent, i) => (
-                  <AgentCard key={agent.id} agent={agent} bid={bidsByAgent[agent.id]} delay={i * 0.04} isActive={activeAgent === agent.id} />
+                  <div key={agent.id} className="relative group">
+                    <AgentCard agent={agent} bid={bidsByAgent[agent.id]} delay={i * 0.04} isActive={activeAgent === agent.id} />
+                    {agent.id.startsWith("custom_") && (
+                      <button
+                        onClick={() => void deleteCustomAgent(agent.id)}
+                        className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded text-slate-700 hover:text-red-400 hover:bg-red-950/40 transition-colors opacity-0 group-hover:opacity-100 text-xs"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -1462,6 +1655,15 @@ export default function DemoPage() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {studioOpen && (
+          <AgentStudioModal
+            onClose={() => setStudioOpen(false)}
+            onCreated={() => void fetchAgentsRef.current()}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

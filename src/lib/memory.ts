@@ -5,6 +5,7 @@ import { updateLeaderboards } from "./marketHistory";
 
 // ── In-memory fallback (no Redis env) ────────────────────────────────────────
 let agentStore: Map<string, Agent> = new Map();
+let customAgentStore: Map<string, Agent> = new Map();
 let missionHistory: MissionResult[] = [];
 let taskMemory: Map<string, { agentId: string; score: number; count: number }> = new Map();
 let runCount = 0;
@@ -17,19 +18,54 @@ function initStore() {
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-export async function getAgents(): Promise<Agent[]> {
+export async function getCustomAgents(): Promise<Agent[]> {
   if (redis) {
     try {
-      const agents: Agent[] = [];
+      const ids = await redis.lrange<string>(KEY.customAgentsList, 0, -1);
+      if (!ids.length) return [];
+      const agents = await Promise.all(ids.map((id) => redis!.get<Agent>(KEY.agent(id))));
+      return agents.filter((a): a is Agent => a !== null);
+    } catch (e) { console.error("[redis] getCustomAgents:", e); }
+  }
+  return Array.from(customAgentStore.values());
+}
+
+export async function addCustomAgent(agent: Agent): Promise<void> {
+  if (redis) {
+    try {
+      await redis.set(KEY.agent(agent.id), agent);
+      await redis.lpush(KEY.customAgentsList, agent.id);
+      return;
+    } catch (e) { console.error("[redis] addCustomAgent:", e); }
+  }
+  customAgentStore.set(agent.id, agent);
+}
+
+export async function removeCustomAgent(agentId: string): Promise<void> {
+  if (redis) {
+    try {
+      await redis.del(KEY.agent(agentId));
+      await redis.lrem(KEY.customAgentsList, 0, agentId);
+      return;
+    } catch (e) { console.error("[redis] removeCustomAgent:", e); }
+  }
+  customAgentStore.delete(agentId);
+}
+
+export async function getAgents(): Promise<Agent[]> {
+  const custom = await getCustomAgents();
+  if (redis) {
+    try {
+      const defaults: Agent[] = [];
       for (const def of DEFAULT_AGENTS) {
         const stored = await redis.get<Agent>(KEY.agent(def.id));
-        agents.push(stored ?? def);
+        defaults.push(stored ?? def);
       }
-      return agents;
+      return [...defaults, ...custom];
     } catch (e) { console.error("[redis] getAgents:", e); }
   }
   initStore();
-  return Array.from(agentStore.values());
+  return [...Array.from(agentStore.values()), ...custom];
 }
 
 export async function getAgent(id: string): Promise<Agent | null> {
@@ -126,16 +162,20 @@ export async function getTotalAgentRuns(): Promise<number> {
 export async function resetDemo(): Promise<void> {
   if (redis) {
     try {
+      const customIds = await redis.lrange<string>(KEY.customAgentsList, 0, -1);
       const keys = [
         KEY.runCount,
         KEY.lastMission,
+        KEY.customAgentsList,
         "swarmdaq:leaderboard",
         ...DEFAULT_AGENTS.map((a) => KEY.agent(a.id)),
+        ...customIds.map((id) => KEY.agent(id)),
       ];
       if (keys.length > 0) await redis.del(...keys);
     } catch (e) { console.error("[redis] resetDemo:", e); }
   }
   agentStore = new Map();
+  customAgentStore = new Map();
   missionHistory = [];
   taskMemory = new Map();
   runCount = 0;
