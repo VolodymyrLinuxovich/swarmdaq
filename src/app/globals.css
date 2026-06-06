@@ -171,11 +171,53 @@ body {
   box-sizing: border-box !important;
 }
 
-/* Fix tables specifically */
+/* Fix tables — scrollable block so they never blow out */
 .copilotKitAssistantMessage table {
+  display: block !important;
   width: 100% !important;
-  table-layout: fixed !important;
-  word-break: break-word !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  border-collapse: collapse !important;
+  font-size: 11px !important;
+  table-layout: auto !important;
+}
+
+.copilotKitAssistantMessage thead {
+  display: table-header-group !important;
+}
+.copilotKitAssistantMessage tbody {
+  display: table-row-group !important;
+}
+.copilotKitAssistantMessage tr {
+  display: table-row !important;
+}
+
+.copilotKitAssistantMessage th,
+.copilotKitAssistantMessage td {
+  display: table-cell !important;
+  padding: 4px 10px !important;
+  border: 1px solid #1e293b !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  text-align: left !important;
+  vertical-align: top !important;
+}
+
+.copilotKitAssistantMessage th {
+  background: rgba(0, 255, 136, 0.05) !important;
+  color: #00ff88 !important;
+  font-weight: 700 !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.copilotKitAssistantMessage td {
+  color: #94a3b8 !important;
+}
+
+.copilotKitAssistantMessage tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015) !important;
 }
 
 .copilotKitAssistantMessage div {
