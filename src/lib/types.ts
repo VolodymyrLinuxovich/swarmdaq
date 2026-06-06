@@ -130,6 +130,7 @@ export interface MarketDecisionEntry {
   taskType: string;
   winnerId: string;
   winnerName: string;
+  winReason?: string;
   candidates: Array<{
     agentId: string;
     agentName: string;
@@ -138,6 +139,8 @@ export interface MarketDecisionEntry {
     bayesianMean: number;
     ucb: number;
     graphTrust: number;
+    bidUtility?: number;
+    reason?: string;
   }>;
 }
 

@@ -12,6 +12,8 @@ import {
   DeliberationEntry,
   DeliberationRevision,
 } from "./types";
+import { getExecMode, type ExecMode } from "./mode";
+import { computeEvalScore } from "./evaluation";
 import {
   getAgents,
   updateAgent,
@@ -47,6 +49,39 @@ import {
 import { computeContributionLedger } from "./math/contribution";
 import { normalize, clamp01, weightedSum } from "./math/agentMath";
 import type { StreamEvent } from "./types";
+
+// ── Seeded demo arc data (only used in SEEDED_DEMO mode) ─────────────────────
+const SEEDED_SCORES: Record<number, EvalScore> = {
+  1: { quality: 72, factuality: 68, usefulness: 78, specificity: 70, actionability: 76, collaboration: 74, overall: 74 },
+  2: { quality: 92, factuality: 94, usefulness: 90, specificity: 89, actionability: 93, collaboration: 88, overall: 91 },
+  3: { quality: 84, factuality: 96, usefulness: 78, specificity: 88, actionability: 72, collaboration: 87, overall: 85 },
+  4: { quality: 96, factuality: 95, usefulness: 97, specificity: 94, actionability: 98, collaboration: 95, overall: 96 },
+};
+
+const SEEDED_REP_UPDATES: Record<number, Array<{ id: string; delta: number; reason: string; eloDelta: number }>> = {
+  1: [
+    { id: "research", delta: -4, reason: "Unsupported market-size claim ($4.2B without source)", eloDelta: -18 },
+    { id: "source_verifier", delta: 3, reason: "Correctly flagged for future verification pairing", eloDelta: 12 },
+    { id: "skeptic", delta: 2, reason: "Thorough risk analysis surfaced critical gaps", eloDelta: 10 },
+  ],
+  2: [
+    { id: "source_verifier", delta: 3, reason: "Drove factuality improvement from 68 → 94", eloDelta: 15 },
+    { id: "research", delta: 2, reason: "Performed better with verification support", eloDelta: 8 },
+    { id: "skeptic", delta: 2, reason: "Hardened risk section with verified competitive threats", eloDelta: 10 },
+    { id: "pitch", delta: 1, reason: "Improved narrative with data-driven proof points", eloDelta: 5 },
+  ],
+  3: [
+    { id: "pitch", delta: -3, reason: "Narrative failure: pitch opened with risk lecture, not story", eloDelta: -14 },
+    { id: "skeptic", delta: -1, reason: "Over-inserted risk framing into pitch task", eloDelta: -5 },
+    { id: "source_verifier", delta: 1, reason: "Maintained factuality standards through over-rotation", eloDelta: 4 },
+  ],
+  4: [
+    { id: "pitch", delta: 4, reason: "Exceptional narrative recovery — best pitch of the series", eloDelta: 22 },
+    { id: "builder", delta: 2, reason: "Narrative-product integration elevated quality", eloDelta: 10 },
+    { id: "skeptic", delta: 2, reason: "Calibrated support role: risk woven in gracefully", eloDelta: 10 },
+    { id: "source_verifier", delta: 1, reason: "Maintained factuality through the full arc", eloDelta: 4 },
+  ],
+};
 
 // Task-agent affinity reference — routing uses MarketMaker scores, not this map directly
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -86,7 +121,8 @@ async function selectAgentForTask(
   task: Task,
   agents: Agent[],
   totalRuns: number,
-  runNum: number
+  runNum: number,
+  mode: ExecMode
 ): Promise<{ agent: Agent; bids: AgentBid[]; decisionEntry: MarketDecisionEntry }> {
   // Compute UCB scores
   const ucbMap: Record<string, number> = {};
@@ -133,6 +169,7 @@ async function selectAgentForTask(
     const skillMatch = task.requiredSkills.map(normalizeSkill).filter((sk) => s.agent.skills.map(normalizeSkill).includes(sk)).length / Math.max(task.requiredSkills.length, 1);
     const ucb = ucbMap[s.agent.id] ?? 0;
     const trust = clamp01((trustMap[s.agent.id] ?? 0.1) * 5);
+    const bid = bids.find((b) => b.agentId === s.agent.id);
     return {
       agentId: s.agent.id,
       agentName: s.agent.name,
@@ -141,41 +178,49 @@ async function selectAgentForTask(
       bayesianMean: parseFloat(s.agent.bayesianMean.toFixed(3)),
       ucb: parseFloat(ucb.toFixed(3)),
       graphTrust: parseFloat(trust.toFixed(3)),
+      bidUtility: parseFloat((bid?.utilityBid ?? 0).toFixed(3)),
+      reason: `skill=${(skillMatch * 100).toFixed(0)}% bayes=${(s.agent.bayesianMean * 100).toFixed(0)}% elo=${Math.round(s.agent.elo)} ucb=${ucb.toFixed(3)}`,
     };
   });
 
-  const makeEntry = (winner: Agent): MarketDecisionEntry => ({
+  const makeEntry = (winner: Agent, runnerUp?: Agent): MarketDecisionEntry => ({
     taskType: task.type,
     winnerId: winner.id,
     winnerName: winner.name,
     candidates: topCandidates,
+    winReason: runnerUp
+      ? `Score advantage: ${(scored.find((s) => s.agent.id === winner.id)?.score ?? 0).toFixed(4)} vs ${(scored.find((s) => s.agent.id === runnerUp.id)?.score ?? 0).toFixed(4)}`
+      : "Top-ranked by MarketMaker composite score",
   });
 
-  // Run 2: pair research with source_verifier (learned from run 1 factuality failure)
-  if (runNum === 2 && task.type === "market_research") {
-    const researchPair = scored.filter((s) =>
-      ["research", "source_verifier"].includes(s.agent.id)
-    );
-    if (researchPair.length > 0) {
-      researchPair.sort((a, b) => b.score - a.score);
-      return { agent: researchPair[0].agent, bids, decisionEntry: makeEntry(researchPair[0].agent) };
+  // ── SEEDED_DEMO scripted routing ──────────────────────────────────────────
+  if (mode === "SEEDED_DEMO") {
+    // Run 2: pair research with source_verifier (learned from run 1 factuality failure)
+    if (runNum === 2 && task.type === "market_research") {
+      const researchPair = scored.filter((s) =>
+        ["research", "source_verifier"].includes(s.agent.id)
+      );
+      if (researchPair.length > 0) {
+        researchPair.sort((a, b) => b.score - a.score);
+        return { agent: researchPair[0].agent, bids, decisionEntry: makeEntry(researchPair[0].agent) };
+      }
     }
-  }
 
-  // Run 3: SkepticAgent over-rotated — forces skeptic into pitch_script (the regression)
-  if (runNum === 3 && task.type === "pitch_script") {
-    const skepticFirst = scored.find((s) => s.agent.id === "skeptic");
-    if (skepticFirst) return { agent: skepticFirst.agent, bids, decisionEntry: makeEntry(skepticFirst.agent) };
-  }
+    // Run 3: SkepticAgent over-rotated — forces skeptic into pitch_script (the regression)
+    if (runNum === 3 && task.type === "pitch_script") {
+      const skepticFirst = scored.find((s) => s.agent.id === "skeptic");
+      if (skepticFirst) return { agent: skepticFirst.agent, bids, decisionEntry: makeEntry(skepticFirst.agent) };
+    }
 
-  // Run 4: PitchAgent leads pitch, BuilderAgent on copy — balanced recovery
-  if (runNum >= 4 && task.type === "pitch_script") {
-    const pitchAgent = scored.find((s) => s.agent.id === "pitch");
-    if (pitchAgent) return { agent: pitchAgent.agent, bids, decisionEntry: makeEntry(pitchAgent.agent) };
-  }
-  if (runNum >= 4 && task.type === "landing_page_copy") {
-    const builderAgent = scored.find((s) => s.agent.id === "builder");
-    if (builderAgent) return { agent: builderAgent.agent, bids, decisionEntry: makeEntry(builderAgent.agent) };
+    // Run 4: PitchAgent leads pitch, BuilderAgent on copy — balanced recovery
+    if (runNum >= 4 && task.type === "pitch_script") {
+      const pitchAgent = scored.find((s) => s.agent.id === "pitch");
+      if (pitchAgent) return { agent: pitchAgent.agent, bids, decisionEntry: makeEntry(pitchAgent.agent) };
+    }
+    if (runNum >= 4 && task.type === "landing_page_copy") {
+      const builderAgent = scored.find((s) => s.agent.id === "builder");
+      if (builderAgent) return { agent: builderAgent.agent, bids, decisionEntry: makeEntry(builderAgent.agent) };
+    }
   }
 
   // Newcomer tryout: a custom agent with 0 runs and perfect skill match gets one guaranteed slot
@@ -190,7 +235,62 @@ async function selectAgentForTask(
   if (newcomer) return { agent: newcomer.agent, bids, decisionEntry: makeEntry(newcomer.agent) };
 
   scored.sort((a, b) => b.score - a.score);
-  return { agent: scored[0].agent, bids, decisionEntry: makeEntry(scored[0].agent) };
+  return { agent: scored[0].agent, bids, decisionEntry: makeEntry(scored[0].agent, scored[1]?.agent) };
+}
+
+function computeRepUpdates(
+  selectedAgents: Agent[],
+  taskAssignments: Record<string, Agent>,
+  evalScore: EvalScore,
+): Array<{ id: string; delta: number; reason: string; eloDelta: number }> {
+  const updates: Array<{ id: string; delta: number; reason: string; eloDelta: number }> = [];
+  const workerIds = new Set(Object.values(taskAssignments).map((a) => a.id));
+  const goodFactuality = evalScore.factuality >= 88;
+  const badFactuality = evalScore.factuality < 72;
+  const veryHighScore = evalScore.overall >= 92;
+  const highScore = evalScore.overall >= 85;
+  const lowScore = evalScore.overall < 75;
+  const badNarrative = evalScore.actionability < 75 && evalScore.usefulness < 78;
+  const goodNarrative = evalScore.actionability >= 85 && evalScore.usefulness >= 88;
+
+  for (const agent of selectedAgents) {
+    if (!workerIds.has(agent.id)) continue;
+    let delta = 0, reason = "", eloDelta = 0;
+
+    if (agent.id === "research") {
+      if (badFactuality) { delta = -4; eloDelta = -18; reason = `Factuality gap (${evalScore.factuality}/100) — unverified claims detected`; }
+      else if (goodFactuality && highScore) { delta = 2; eloDelta = 8; reason = `Well-sourced research drove factuality to ${evalScore.factuality}/100`; }
+    } else if (agent.id === "source_verifier") {
+      if (goodFactuality) { delta = 3; eloDelta = 14; reason = `Source verification drove factuality to ${evalScore.factuality}/100`; }
+      else if (evalScore.factuality >= 78) { delta = 1; eloDelta = 4; reason = `Maintained factuality at ${evalScore.factuality}/100`; }
+    } else if (agent.id === "skeptic") {
+      const pitchTaskAgent = Object.entries(taskAssignments).find(([t]) => t === "pitch_script")?.[1];
+      const skepticOwnsNarrative = pitchTaskAgent?.id === "skeptic";
+      if (skepticOwnsNarrative && badNarrative) { delta = -2; eloDelta = -10; reason = `Risk framing dominated pitch — actionability dropped to ${evalScore.actionability}/100`; }
+      else if (!skepticOwnsNarrative && veryHighScore) { delta = 2; eloDelta = 10; reason = `Risk analysis contributed to peak quality (${evalScore.overall}/100)`; }
+      else if (!skepticOwnsNarrative && highScore) { delta = 1; eloDelta = 5; reason = `Risk review maintained quality (${evalScore.overall}/100)`; }
+    } else if (agent.id === "pitch") {
+      const pitchTaskAgent = Object.entries(taskAssignments).find(([t]) => t === "pitch_script")?.[1];
+      if (pitchTaskAgent?.id === "pitch") {
+        if (goodNarrative && veryHighScore) { delta = 4; eloDelta = 20; reason = `Exceptional pitch narrative (actionability:${evalScore.actionability} usefulness:${evalScore.usefulness})`; }
+        else if (goodNarrative && highScore) { delta = 2; eloDelta = 10; reason = `Strong pitch narrative (actionability:${evalScore.actionability})`; }
+        else if (badNarrative) { delta = -3; eloDelta = -14; reason = `Narrative below threshold (actionability:${evalScore.actionability}/100 usefulness:${evalScore.usefulness}/100)`; }
+      }
+    } else if (agent.id === "builder") {
+      if (veryHighScore && evalScore.usefulness >= 90) { delta = 2; eloDelta = 10; reason = `Product depth elevated usefulness to ${evalScore.usefulness}/100`; }
+      else if (highScore) { delta = 1; eloDelta = 4; reason = `Contributed to high quality output (${evalScore.overall}/100)`; }
+      else if (lowScore) { delta = -1; eloDelta = -5; reason = `Output below quality threshold (${evalScore.overall}/100)`; }
+    }
+
+    // Generic fallback for agents not specifically covered
+    if (delta === 0 && !["evaluator", "market_maker", "planner", "reputation"].includes(agent.id)) {
+      if (highScore) { delta = 1; eloDelta = 4; reason = `Contributed to successful mission (${evalScore.overall}/100)`; }
+      else if (lowScore) { delta = -1; eloDelta = -4; reason = `Mission below quality threshold (${evalScore.overall}/100)`; }
+    }
+
+    if (delta !== 0) updates.push({ id: agent.id, delta, reason, eloDelta });
+  }
+  return updates;
 }
 
 async function planTasksForMission(mission: string): Promise<Task[]> {
@@ -264,9 +364,10 @@ async function runDeliberation(params: {
   selectedAgents: Agent[];
   mission: string;
   runNum: number;
+  mode: ExecMode;
   emit: (e: StreamEvent) => void;
 }): Promise<{ revisedOutputs: Record<string, string>; allEntries: DeliberationEntry[]; allRevisions: DeliberationRevision[] }> {
-  const { outputs, taskAssignments, selectedAgents, mission, runNum, emit } = params;
+  const { outputs, taskAssignments, selectedAgents, mission, runNum, mode, emit } = params;
   const revisedOutputs = { ...outputs };
   const allEntries: DeliberationEntry[] = [];
   const allRevisions: DeliberationRevision[] = [];
@@ -276,8 +377,9 @@ async function runDeliberation(params: {
   const critics = selectedAgents.filter((a) => ["skeptic", "source_verifier"].includes(a.id));
   const isDefaultMission = mission.toLowerCase().includes("hackathon") || mission.toLowerCase().includes("student");
 
-  // Use hardcoded fallbacks for the demo arc, real LLM for custom missions
-  if (isDefaultMission && DELIBERATION_FALLBACKS[runNum]) {
+  // Use seeded fallbacks only in SEEDED_DEMO mode
+  const useSeededDeliberation = mode === "SEEDED_DEMO" && isDefaultMission && !!DELIBERATION_FALLBACKS[runNum];
+  if (useSeededDeliberation) {
     const fallback = DELIBERATION_FALLBACKS[runNum];
 
     // Stream entries with a short delay between each for visual effect
@@ -310,7 +412,7 @@ async function runDeliberation(params: {
     // Real LLM deliberation for custom missions
     for (const critic of critics) {
       const otherOutputs = Object.entries(outputs)
-        .filter(([, _]) => true)
+        .filter(() => true)
         .map(([taskType, output]) => ({
           agentName: taskAssignments[taskType]?.name ?? "Unknown",
           taskType,
@@ -399,6 +501,7 @@ async function runDeliberation(params: {
 
 export async function runMission(mission: string, clientRunNumber?: number, onEvent?: (e: StreamEvent) => void): Promise<MissionResult> {
   const emit = (e: StreamEvent) => { try { onEvent?.(e); } catch {} };
+  const mode = getExecMode();
   resetTokenAccumulator();
   const missionId = uuidv4();
   const agents = await getAgents();
@@ -435,7 +538,8 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
       task,
       agents,
       totalRuns,
-      runNum
+      runNum,
+      mode
     );
 
     allBids.push(...bids.slice(0, 3)); // top 3 bids per task
@@ -470,8 +574,9 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
 
   // Execution phase
   const outputs: Record<string, string> = {};
-  const contextStr =
-    runNum >= 4 ? "run4" : runNum === 3 ? "run3" : runNum === 2 ? "run2" : "run1";
+  // LIVE mode: don't leak run number to LLM
+  // SEEDED_DEMO/FALLBACK: use run-based variant for fallback output selection
+  const contextStr = mode === "LIVE" ? "" : `run${runNum >= 4 ? 4 : runNum}`;
 
   for (const task of tasks) {
     if (task.type === "final_eval") continue;
@@ -507,6 +612,7 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
     selectedAgents,
     mission,
     runNum,
+    mode,
     emit,
   });
   // Apply revisions back to tasks
@@ -529,16 +635,12 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
   });
   outputs["final_eval"] = evalOutput;
 
-  // Deterministic eval scores — 74 → 91 → 85 (regression) → 96
+  // Eval score — seeded in demo mode, real computation otherwise
   let evalScore: EvalScore;
-  if (runNum === 1) {
-    evalScore = { quality: 72, factuality: 68, usefulness: 78, specificity: 70, actionability: 76, collaboration: 74, overall: 74 };
-  } else if (runNum === 2) {
-    evalScore = { quality: 92, factuality: 94, usefulness: 90, specificity: 89, actionability: 93, collaboration: 88, overall: 91 };
-  } else if (runNum === 3) {
-    evalScore = { quality: 84, factuality: 96, usefulness: 78, specificity: 88, actionability: 72, collaboration: 87, overall: 85 };
+  if (mode === "SEEDED_DEMO") {
+    evalScore = SEEDED_SCORES[runNum] ?? SEEDED_SCORES[4];
   } else {
-    evalScore = { quality: 96, factuality: 95, usefulness: 97, specificity: 94, actionability: 98, collaboration: 95, overall: 96 };
+    evalScore = await computeEvalScore(mission, outputs, selectedAgents, evalOutput);
   }
 
   await updateAgent("evaluator", { status: "done" });
@@ -552,31 +654,9 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
   const reputationChanges: ReputationChange[] = [];
 
   const repUpdates: Array<{ id: string; delta: number; reason: string; eloDelta?: number }> =
-    runNum === 1
-      ? [
-          { id: "research", delta: -4, reason: "Unsupported market-size claim ($4.2B without source)", eloDelta: -18 },
-          { id: "source_verifier", delta: 3, reason: "Correctly flagged by evaluator for future verification pairing", eloDelta: 12 },
-          { id: "skeptic", delta: 2, reason: "Thorough risk analysis surfaced critical gaps", eloDelta: 10 },
-        ]
-      : runNum === 2
-      ? [
-          { id: "source_verifier", delta: 3, reason: "Drove factuality improvement from 68 → 94", eloDelta: 15 },
-          { id: "research", delta: 2, reason: "Performed better with verification support", eloDelta: 8 },
-          { id: "skeptic", delta: 2, reason: "Hardened risk section with verified competitive threats", eloDelta: 10 },
-          { id: "pitch", delta: 1, reason: "Improved narrative quality with data-driven proof points", eloDelta: 5 },
-        ]
-      : runNum === 3
-      ? [
-          { id: "pitch", delta: -3, reason: "Narrative failure: pitch opened with risk lecture, not story. Emotional hook absent.", eloDelta: -14 },
-          { id: "skeptic", delta: -1, reason: "Over-inserted risk framing into pitch task outside its domain", eloDelta: -5 },
-          { id: "source_verifier", delta: 1, reason: "Maintained factuality standards through over-rotation", eloDelta: 4 },
-        ]
-      : [
-          { id: "pitch", delta: 4, reason: "Exceptional narrative recovery — best pitch of the series, emotional hook + verified data + moat", eloDelta: 22 },
-          { id: "builder", delta: 2, reason: "Narrative-product integration elevated pitch and landing copy to peak quality", eloDelta: 10 },
-          { id: "skeptic", delta: 2, reason: "Calibrated support role: risk woven in gracefully without overriding narrative", eloDelta: 10 },
-          { id: "source_verifier", delta: 1, reason: "Maintained factuality through the full 4-run arc", eloDelta: 4 },
-        ];
+    mode === "SEEDED_DEMO"
+      ? (SEEDED_REP_UPDATES[runNum] ?? SEEDED_REP_UPDATES[4])
+      : computeRepUpdates(selectedAgents, taskAssignments, evalScore);
 
   for (const upd of repUpdates) {
     const agent = agents.find((a) => a.id === upd.id);
@@ -667,13 +747,17 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
     });
   }
 
-  if (runNum >= 2) {
-    recordCollaboration("source_verifier", "research", 0.17);
-    recordCollaboration("skeptic", "source_verifier", 0.09);
-  }
-  if (runNum >= 4) {
-    recordCollaboration("pitch", "builder", 0.14);
-    recordCollaboration("skeptic", "pitch", 0.08);
+  // Record collaboration for all agent pairs that co-ran this mission
+  const workerEntries = Object.entries(taskAssignments);
+  for (let i = 0; i < workerEntries.length; i++) {
+    for (let j = i + 1; j < workerEntries.length; j++) {
+      const [, agentA] = workerEntries[i];
+      const [, agentB] = workerEntries[j];
+      if (agentA.id !== agentB.id) {
+        const synergyScore = (evalScore.collaboration / 100) * 0.12;
+        recordCollaboration(agentA.id, agentB.id, synergyScore);
+      }
+    }
   }
 
   // Task memory
@@ -761,21 +845,34 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
     const objDelta = swarmPortfolio.objective - prevPortfolio.objective;
     const scoreDelta = currScore - prevScore;
 
-    const messageByRun: Record<number, string> = {
-      2: `Market learned: factuality +${factDelta}, confidence +12%, risk −23%, cost +$0.03. Swarm objective ${prevPortfolio.objective.toFixed(2)} → ${swarmPortfolio.objective.toFixed(2)}.`,
-      3: `Market over-rotated: SkepticAgent displaced PitchAgent. Narrative quality −13%, factuality +${factDelta}. Score ${prevScore} → ${currScore}. Regression visible — rebalancing required.`,
-      4: `Market calibrated: PitchAgent + BuilderAgent synergy unlocked. Score ${prevScore} → ${currScore}. New peak across all dimensions. Swarm objective ${prevPortfolio.objective.toFixed(2)} → ${swarmPortfolio.objective.toFixed(2)}.`,
-    };
+    const pitchAgent = Object.entries(taskAssignments).find(([t]) => t === "pitch_script")?.[1];
+    const narrativeAgent = pitchAgent?.name ?? "agent";
+
+    const defaultMsg = scoreDelta < 0
+      ? `Score dropped ${Math.abs(scoreDelta)} pts (${prevScore} → ${currScore}). Factuality: ${evalScore.factuality}/100. ${narrativeAgent} led pitch.`
+      : `Score improved ${scoreDelta} pts (${prevScore} → ${currScore}). Factuality +${factDelta}. Swarm objective ${prevPortfolio.objective.toFixed(2)} → ${swarmPortfolio.objective.toFixed(2)}.`;
+
+    let message: string;
+    if (mode === "SEEDED_DEMO") {
+      const messageByRun: Record<number, string> = {
+        2: `Market learned: factuality +${factDelta}, confidence +12%, risk −23%, cost +$0.03. Swarm objective ${prevPortfolio.objective.toFixed(2)} → ${swarmPortfolio.objective.toFixed(2)}.`,
+        3: `Market over-rotated: SkepticAgent displaced PitchAgent. Narrative quality −13%, factuality +${factDelta}. Score ${prevScore} → ${currScore}. Regression visible — rebalancing required.`,
+        4: `Market calibrated: PitchAgent + BuilderAgent synergy unlocked. Score ${prevScore} → ${currScore}. New peak across all dimensions. Swarm objective ${prevPortfolio.objective.toFixed(2)} → ${swarmPortfolio.objective.toFixed(2)}.`,
+      };
+      message = messageByRun[runNum] ?? defaultMsg;
+    } else {
+      message = defaultMsg;
+    }
 
     improvementFromPrevious = {
       factualityDelta: factDelta,
-      confidenceDelta: runNum === 3 ? -8 : runNum === 4 ? 6 : 12,
-      riskDelta: runNum === 3 ? 12 : runNum === 4 ? -18 : -23,
-      costDelta: runNum === 4 ? 0.02 : 0.03,
+      confidenceDelta: scoreDelta > 0 ? Math.round(scoreDelta * 0.6) : Math.round(scoreDelta * 0.6),
+      riskDelta: evalScore.actionability >= 85 ? -15 : evalScore.actionability < 70 ? 12 : 0,
+      costDelta: 0.03,
       swarmObjectiveDelta: objDelta,
       previousScore: prevScore,
       currentScore: currScore,
-      message: messageByRun[runNum] ?? `Score ${scoreDelta > 0 ? "+" : ""}${scoreDelta}: ${prevScore} → ${currScore}.`,
+      message,
     };
   }
 

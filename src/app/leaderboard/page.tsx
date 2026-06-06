@@ -48,6 +48,7 @@ export default function LeaderboardPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetch_();
     const id = setInterval(() => { void fetch_(); }, 3000);
     return () => clearInterval(id);

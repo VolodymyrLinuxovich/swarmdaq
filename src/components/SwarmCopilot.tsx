@@ -5,7 +5,8 @@ import { CopilotPopup } from "@copilotkit/react-ui";
 import type { MissionResult, Agent, MarketDecisionEntry } from "@/lib/types";
 import type { TraceSummary } from "@/app/api/traces/route";
 import { MissionResultCard } from "./copilot/MissionResultCard";
-import { AgentBidCard } from "./copilot/AgentBidCard";
+// AgentBidCard kept for future use
+// import { AgentBidCard } from "./copilot/AgentBidCard";
 import { MarketMakerDecisionCard } from "./copilot/MarketMakerDecisionCard";
 import { TraceTimelineCard } from "./copilot/TraceTimelineCard";
 import { ReputationDeltaCard } from "./copilot/ReputationDeltaCard";
@@ -117,7 +118,7 @@ function computeRebalance(agents: Agent[], goal: string): RebalanceResult {
   };
 }
 
-function buildMarketMakerExplanation(log: MarketDecisionEntry[], agents: Agent[]): string {
+function buildMarketMakerExplanation(log: MarketDecisionEntry[]): string {
   if (!log.length) return "No market decision log available. Run a mission first.";
 
   const lines: string[] = [];
@@ -125,7 +126,6 @@ function buildMarketMakerExplanation(log: MarketDecisionEntry[], agents: Agent[]
     const winner = entry.candidates[0];
     const loser = entry.candidates[1];
     if (!winner) continue;
-    const agent = agents.find((a) => a.id === winner.agentId);
     const winMargin = loser ? (winner.compositeScore - loser.compositeScore).toFixed(4) : "N/A";
     const dominant = Object.entries({ skillMatch: winner.skillMatch, bayesianMean: winner.bayesianMean, ucb: winner.ucb, graphTrust: winner.graphTrust })
       .sort(([, a], [, b]) => b - a)[0];
@@ -287,7 +287,7 @@ export function SwarmCopilot() {
         return <div style={{ fontFamily: "monospace", fontSize: 12, color: "#334155", padding: 12 }}>Analyzing market decisions...</div>;
       }
       const demoLog: MarketDecisionEntry[] = result.log ?? [];
-      const explanation = buildMarketMakerExplanation(demoLog, result.agents);
+      const explanation = buildMarketMakerExplanation(demoLog);
       return <MarketMakerDecisionCard log={demoLog} explanation={explanation} />;
     },
   });

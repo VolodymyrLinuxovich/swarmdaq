@@ -1092,6 +1092,7 @@ export default function DemoPage() {
     } catch {}
   });
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void fetchAgentsRef.current(); void fetchMarketMemory(); }, []);
 
   const animateMessages = async (messages: AgentMessage[]) => {
