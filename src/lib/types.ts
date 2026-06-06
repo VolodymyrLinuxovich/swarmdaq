@@ -173,6 +173,7 @@ export interface MissionResult {
   runCost?: RunCost;
   weaveTraceUrl?: string;
   marketDecisionLog?: MarketDecisionEntry[];
+  deliberationLog?: { entries: DeliberationEntry[]; revisions: DeliberationRevision[] };
 }
 
 export interface ImprovementSummary {
@@ -196,6 +197,24 @@ export interface MathSnapshot {
   pairwiseProbabilities: Array<{ a: string; b: string; pABeatsB: number; dimension: string }>;
 }
 
+export interface DeliberationEntry {
+  kind: "objection" | "endorsement";
+  criticId: string;
+  criticName: string;
+  targetAgentId: string;
+  targetAgentName: string;
+  taskType: string;
+  claim: string;
+  severity?: "critical" | "minor";
+}
+
+export interface DeliberationRevision {
+  agentId: string;
+  agentName: string;
+  taskType: string;
+  summary: string;
+}
+
 export type StreamEvent =
   | { type: "phase"; phase: string }
   | { type: "tasks"; tasks: Task[] }
@@ -203,6 +222,10 @@ export type StreamEvent =
   | { type: "swarm"; agents: Agent[] }
   | { type: "agent_start"; agentId: string; agentName: string; taskType: string }
   | { type: "agent_done"; agentId: string; agentName: string; taskType: string; output: string }
+  | { type: "deliberation_start" }
+  | { type: "deliberation_entry"; entry: DeliberationEntry }
+  | { type: "deliberation_revision"; revision: DeliberationRevision }
+  | { type: "deliberation_done"; objections: number; endorsements: number; revisions: number }
   | { type: "score"; evalScore: EvalScore }
   | { type: "rep_change"; change: ReputationChange }
   | { type: "done"; result: MissionResult }

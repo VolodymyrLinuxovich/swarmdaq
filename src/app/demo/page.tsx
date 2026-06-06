@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useCopilotReadable } from "@copilotkit/react-core";
-import type { MissionResult, Agent, AgentBid, ReputationChange, ShapleyContribution, AgentMessage, MarketDecisionEntry, StreamEvent, EvalScore } from "@/lib/types";
+import type { MissionResult, Agent, AgentBid, ReputationChange, ShapleyContribution, AgentMessage, MarketDecisionEntry, StreamEvent, EvalScore, DeliberationEntry, DeliberationRevision } from "@/lib/types";
 import { AGENT_PROVIDER, PROVIDER_COLORS } from "@/lib/providers-config";
 import type { TraceSummary } from "@/app/api/traces/route";
 import { getAgentLabel } from "@/components/copilot/WeakAgentCard";
@@ -744,6 +744,73 @@ function LiveTicker({ agents, reputationChanges }: { agents: Agent[]; reputation
   );
 }
 
+// ── Deliberation Feed ─────────────────────────────────────────────────────────
+
+function DeliberationFeed({ entries, revisions, done }: {
+  entries: DeliberationEntry[];
+  revisions: DeliberationRevision[];
+  done: boolean;
+}) {
+  const endRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [entries.length, revisions.length]);
+
+  if (entries.length === 0 && revisions.length === 0) return null;
+
+  const objCount = entries.filter((e) => e.kind === "objection").length;
+  const endCount = entries.filter((e) => e.kind === "endorsement").length;
+
+  return (
+    <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+      {entries.map((e, i) => {
+        const isObj = e.kind === "objection";
+        const isCritical = isObj && e.severity === "critical";
+        const color = isCritical ? "#ef4444" : isObj ? "#f97316" : "#00ff88";
+        const icon = isCritical ? "⚠" : isObj ? "○" : "✓";
+        return (
+          <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.25 }}
+            className="flex gap-2 p-2.5 rounded border text-xs font-mono"
+            style={{ borderColor: `${color}25`, backgroundColor: `${color}06` }}>
+            <span className="flex-shrink-0 w-4 font-bold" style={{ color }}>{icon}</span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                <span className="font-bold" style={{ color }}>{e.criticName}</span>
+                <span className="text-slate-700">→</span>
+                <span className="text-slate-400">{e.targetAgentName}</span>
+                <span className="text-slate-800 text-xs px-1 rounded border border-slate-900">{e.taskType.replace(/_/g, " ")}</span>
+                {isCritical && <span className="text-red-500 text-xs font-bold">CRITICAL</span>}
+              </div>
+              <p className="text-slate-400 leading-relaxed">{e.claim}</p>
+            </div>
+          </motion.div>
+        );
+      })}
+      {revisions.map((r, i) => (
+        <motion.div key={`rev-${i}`} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.25 }}
+          className="flex gap-2 p-2.5 rounded border border-blue-900/30 bg-blue-950/10 text-xs font-mono">
+          <span className="flex-shrink-0 w-4 text-blue-400 font-bold">↺</span>
+          <div>
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className="font-bold text-blue-400">{r.agentName}</span>
+              <span className="text-slate-700">revised</span>
+              <span className="text-slate-800 text-xs px-1 rounded border border-slate-900">{r.taskType.replace(/_/g, " ")}</span>
+            </div>
+            <p className="text-slate-500 leading-relaxed">{r.summary}</p>
+          </div>
+        </motion.div>
+      ))}
+      {done && entries.length > 0 && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-3 pt-1 pb-0.5 text-xs font-mono text-slate-700">
+          <span className="text-red-500">{objCount} objection{objCount !== 1 ? "s" : ""}</span>
+          <span>·</span>
+          <span className="text-green-500">{endCount} endorsement{endCount !== 1 ? "s" : ""}</span>
+          {revisions.length > 0 && <><span>·</span><span className="text-blue-400">{revisions.length} revision{revisions.length !== 1 ? "s" : ""}</span></>}
+        </motion.div>
+      )}
+      <div ref={endRef} />
+    </div>
+  );
+}
+
 // ── Agent Studio ──────────────────────────────────────────────────────────────
 
 const STUDIO_SKILLS = [
@@ -915,10 +982,10 @@ function AgentStudioModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
 // ── Page types ───────────────────────────────────────────────────────────────
 
-type Phase = "idle" | "planning" | "auction" | "executing" | "evaluating" | "updating" | "done";
+type Phase = "idle" | "planning" | "auction" | "executing" | "deliberating" | "evaluating" | "updating" | "done";
 const PHASE_LABELS: Record<Phase, string> = {
   idle: "Waiting", planning: "Planning →", auction: "Auction →",
-  executing: "Executing →", evaluating: "Evaluating →", updating: "Updating Reputation →", done: "Complete ✓",
+  executing: "Executing →", deliberating: "Deliberating →", evaluating: "Evaluating →", updating: "Updating Reputation →", done: "Complete ✓",
 };
 
 // ── Main page ────────────────────────────────────────────────────────────────
@@ -953,6 +1020,9 @@ export default function DemoPage() {
   const [replayMission, setReplayMission] = useState<MissionResult | null>(null);
   const [replayEvents, setReplayEvents] = useState<MissionEvent[]>([]);
   const [studioOpen, setStudioOpen] = useState(false);
+  const [deliberationEntries, setDeliberationEntries] = useState<DeliberationEntry[]>([]);
+  const [deliberationRevisions, setDeliberationRevisions] = useState<DeliberationRevision[]>([]);
+  const [deliberationDone, setDeliberationDone] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
 
   const deleteCustomAgent = async (agentId: string) => {
@@ -1044,6 +1114,9 @@ export default function DemoPage() {
     setStreamScore(null);
     setStreamRepChanges([]);
     setActiveAgent(null);
+    setDeliberationEntries([]);
+    setDeliberationRevisions([]);
+    setDeliberationDone(false);
     setPhase("planning");
 
     const handleStreamEvent = (event: StreamEvent) => {
@@ -1069,6 +1142,17 @@ export default function DemoPage() {
           setActiveAgent(null);
           setLiveAgents((prev) => prev.map((a) => a.id === event.agentId ? { ...a, status: "done" } : a));
           setStreamOutputs((prev) => ({ ...prev, [event.taskType]: event.output }));
+          break;
+        case "deliberation_start":
+          break;
+        case "deliberation_entry":
+          setDeliberationEntries((prev) => [...prev, event.entry]);
+          break;
+        case "deliberation_revision":
+          setDeliberationRevisions((prev) => [...prev, event.revision]);
+          break;
+        case "deliberation_done":
+          setDeliberationDone(true);
           break;
         case "score":
           setStreamScore(event.evalScore);
@@ -1414,6 +1498,29 @@ export default function DemoPage() {
                 </div>
                 <MessageFeed messages={liveMessages} />
               </div>
+            )}
+
+            {/* Deliberation feed */}
+            {(deliberationEntries.length > 0 || deliberationRevisions.length > 0) && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="terminal-card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xs text-slate-600 uppercase tracking-wider">⚖ Agent Deliberation</span>
+                  {!deliberationDone && (
+                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.8, repeat: Infinity }}
+                      className="text-xs font-mono text-amber-500">● live</motion.span>
+                  )}
+                  {deliberationDone && displayResult && (
+                    <span className="ml-auto text-xs font-mono text-green-600">
+                      score after deliberation: <span className="font-bold">{displayResult.evalScore.overall}</span>
+                    </span>
+                  )}
+                </div>
+                <DeliberationFeed
+                  entries={deliberationEntries}
+                  revisions={deliberationRevisions}
+                  done={deliberationDone}
+                />
+              </motion.div>
             )}
 
             {displayResult && (

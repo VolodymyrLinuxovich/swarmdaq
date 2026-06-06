@@ -677,3 +677,97 @@ Return ONLY valid JSON array, no markdown fences:
     return null;
   }
 }
+
+// ── Deliberation LLM calls ────────────────────────────────────────────────────
+
+export interface DeliberationCritiqueResult {
+  objections: Array<{ targetAgent: string; taskType: string; claim: string; severity: "critical" | "minor" }>;
+  endorsements: Array<{ targetAgent: string; taskType: string; claim: string }>;
+}
+
+export async function generateDeliberationCritique(params: {
+  criticName: string;
+  criticRole: string;
+  mission: string;
+  otherOutputs: Array<{ agentName: string; taskType: string; output: string }>;
+}): Promise<DeliberationCritiqueResult | null> {
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const outputsText = params.otherOutputs
+    .map((o) => `[${o.taskType} by ${o.agentName}]:\n${o.output.slice(0, 500)}`)
+    .join("\n\n---\n\n");
+
+  const prompt = `You are ${params.criticName}, a critical reviewer in a multi-agent swarm. Your role: ${params.criticRole}.
+
+Mission: "${params.mission}"
+
+Review these teammate outputs and respond ONLY with valid JSON (no markdown, no explanation):
+
+${outputsText}
+
+JSON format:
+{
+  "objections": [
+    { "targetAgent": "AgentName", "taskType": "task_type", "claim": "specific issue in one sentence", "severity": "critical" | "minor" }
+  ],
+  "endorsements": [
+    { "targetAgent": "AgentName", "taskType": "task_type", "claim": "what specifically impressed you in one sentence" }
+  ]
+}
+
+Rules: maximum 2 objections + 2 endorsements. Be specific — name exact claims, numbers, or phrases. No generic praise.`;
+
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const genAI = new GoogleGenAI({ apiKey });
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+    const text = (response.text ?? "").trim().replace(/^```json\s*/, "").replace(/```$/, "");
+    const parsed = JSON.parse(text) as DeliberationCritiqueResult;
+    return {
+      objections: (parsed.objections ?? []).slice(0, 2),
+      endorsements: (parsed.endorsements ?? []).slice(0, 2),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function generateRevision(params: {
+  agentName: string;
+  agentRole: string;
+  mission: string;
+  taskType: string;
+  originalOutput: string;
+  objectionClaim: string;
+}): Promise<string | null> {
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const prompt = `You are ${params.agentName}, a ${params.agentRole}.
+
+Mission: "${params.mission}"
+
+Your original output for "${params.taskType}":
+${params.originalOutput.slice(0, 800)}
+
+A teammate raised this critical objection:
+"${params.objectionClaim}"
+
+Revise your output to directly address this issue. Keep the same structure but fix the flagged problem. Be concise.`;
+
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const genAI = new GoogleGenAI({ apiKey });
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+    return response.text?.trim() ?? null;
+  } catch {
+    return null;
+  }
+}

@@ -9,6 +9,8 @@ import {
   ImprovementSummary,
   MathSnapshot,
   MarketDecisionEntry,
+  DeliberationEntry,
+  DeliberationRevision,
 } from "./types";
 import {
   getAgents,
@@ -25,7 +27,7 @@ import {
   appendAgentHistory,
   storeMission,
 } from "./marketHistory";
-import { generateAgentOutput, planMissionTasks, resetTokenAccumulator, getTokenAccumulator } from "./gemini";
+import { generateAgentOutput, planMissionTasks, resetTokenAccumulator, getTokenAccumulator, generateDeliberationCritique, generateRevision } from "./gemini";
 import { TASKS } from "./agents";
 import { getAgentMessages } from "./messages";
 import { traceEvent } from "./trace";
@@ -205,6 +207,196 @@ async function planTasksForMission(mission: string): Promise<Task[]> {
   }));
 }
 
+// ── Hardcoded deliberation fallbacks for the 4-run arc ───────────────────────
+
+const DELIBERATION_FALLBACKS: Record<number, {
+  entries: Array<Omit<DeliberationEntry, "criticId" | "targetAgentId">>;
+  revisions: Array<Omit<DeliberationRevision, "agentId"> & { agentName: string }>;
+}> = {
+  1: {
+    entries: [
+      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "The $4.2B market-size figure has no cited source — any investor will challenge this immediately.", severity: "critical" },
+      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "The 73% stat is suspiciously round. Unattributed data damages credibility more than no data.", severity: "minor" },
+      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "The '4am hands-up' opener is sharp — immediately relatable, emotionally specific." },
+      { kind: "objection", criticName: "SourceVerifierAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "Cannot verify $4.2B against HolonIQ, Gartner, or IDC current data. Figure appears fabricated.", severity: "critical" },
+      { kind: "endorsement", criticName: "SourceVerifierAgent", targetAgentName: "SkepticAgent", taskType: "risk_analysis", claim: "Commoditization risk is correctly framed as existential and urgent — well done." },
+    ],
+    revisions: [
+      { agentName: "ResearchAgent", taskType: "market_research", summary: "Added '(source: verification required)' caveat to the $4.2B figure and downgraded claim confidence to low." },
+    ],
+  },
+  2: {
+    entries: [
+      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "All figures now cite sources — HolonIQ and MLH data are verifiable. Significant improvement." },
+      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "Story-driven structure with verified proof points is exactly the right fix from run 1." },
+      { kind: "endorsement", criticName: "SourceVerifierAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "MLH 2024 survey data (n=12,400) is real and verifiable. High confidence. Great sourcing." },
+      { kind: "endorsement", criticName: "SourceVerifierAgent", targetAgentName: "SkepticAgent", taskType: "risk_analysis", claim: "Every risk now has a named mitigation with a timeline. This is what investors want to see." },
+    ],
+    revisions: [],
+  },
+  3: {
+    entries: [
+      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "This pitch opens with risk framing, not a story. Judges tune out after 10 seconds of caveats.", severity: "critical" },
+      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "BuilderAgent", taskType: "landing_page_copy", claim: "Headline 'An AI Tool That Helps You Organize Research' is passive and forgettable.", severity: "minor" },
+      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "SourceVerifierAgent", taskType: "market_research", claim: "Factuality held at 96 — every claim is watertight despite over-rotation elsewhere." },
+      { kind: "objection", criticName: "SourceVerifierAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "Opening line 'May improve pitch preparation' undercuts the confidence established in run 2.", severity: "critical" },
+    ],
+    revisions: [
+      { agentName: "PitchAgent", taskType: "pitch_script", summary: "Revised opening to lead with risk acknowledgment — partially addressed SkepticAgent objection but over-corrected, creating hedged narrative." },
+    ],
+  },
+  4: {
+    entries: [
+      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "'The team that wins HackMIT isn't always the best engineers' — this is the sharpest line in the entire 4-run arc." },
+      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "BuilderAgent", taskType: "landing_page_copy", claim: "The 'Isn't this just ChatGPT?' reframe is a masterclass in objection handling within copy." },
+      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "The ask ($400K) should name the judge feedback flywheel specifically — it's the defensible moat.", severity: "minor" },
+      { kind: "endorsement", criticName: "SourceVerifierAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "2.8x win rate across 240 teams, 18 hackathons — this is verifiable and powerful social proof." },
+    ],
+    revisions: [
+      { agentName: "PitchAgent", taskType: "pitch_script", summary: "Strengthened the ask line: 'We're raising $400K to build the judge feedback flywheel — the only compounding moat in this market.'" },
+    ],
+  },
+};
+
+async function runDeliberation(params: {
+  outputs: Record<string, string>;
+  taskAssignments: Record<string, Agent>;
+  selectedAgents: Agent[];
+  mission: string;
+  runNum: number;
+  emit: (e: StreamEvent) => void;
+}): Promise<{ revisedOutputs: Record<string, string>; allEntries: DeliberationEntry[]; allRevisions: DeliberationRevision[] }> {
+  const { outputs, taskAssignments, selectedAgents, mission, runNum, emit } = params;
+  const revisedOutputs = { ...outputs };
+  const allEntries: DeliberationEntry[] = [];
+  const allRevisions: DeliberationRevision[] = [];
+
+  emit({ type: "deliberation_start" });
+
+  const critics = selectedAgents.filter((a) => ["skeptic", "source_verifier"].includes(a.id));
+  const isDefaultMission = mission.toLowerCase().includes("hackathon") || mission.toLowerCase().includes("student");
+
+  // Use hardcoded fallbacks for the demo arc, real LLM for custom missions
+  if (isDefaultMission && DELIBERATION_FALLBACKS[runNum]) {
+    const fallback = DELIBERATION_FALLBACKS[runNum];
+
+    // Stream entries with a short delay between each for visual effect
+    for (const raw of fallback.entries) {
+      const criticAgent = selectedAgents.find((a) => a.name === raw.criticName) ?? critics[0];
+      const targetAgent = selectedAgents.find((a) => a.name === raw.targetAgentName)
+        ?? Object.values(taskAssignments).find((a) => a.name === raw.targetAgentName);
+      if (!criticAgent || !targetAgent) continue;
+
+      const entry: DeliberationEntry = {
+        ...raw,
+        criticId: criticAgent.id,
+        targetAgentId: targetAgent.id,
+      };
+      allEntries.push(entry);
+      emit({ type: "deliberation_entry", entry });
+      await new Promise((r) => setTimeout(r, 220));
+    }
+
+    for (const raw of fallback.revisions) {
+      const agent = selectedAgents.find((a) => a.name === raw.agentName)
+        ?? Object.values(taskAssignments).find((a) => a.name === raw.agentName);
+      if (!agent) continue;
+      const revision: DeliberationRevision = { agentId: agent.id, agentName: agent.name, taskType: raw.taskType, summary: raw.summary };
+      allRevisions.push(revision);
+      emit({ type: "deliberation_revision", revision });
+      await new Promise((r) => setTimeout(r, 180));
+    }
+  } else {
+    // Real LLM deliberation for custom missions
+    for (const critic of critics) {
+      const otherOutputs = Object.entries(outputs)
+        .filter(([, _]) => true)
+        .map(([taskType, output]) => ({
+          agentName: taskAssignments[taskType]?.name ?? "Unknown",
+          taskType,
+          output,
+        }))
+        .filter((o) => o.agentName !== critic.name);
+
+      if (otherOutputs.length === 0) continue;
+
+      const result = await generateDeliberationCritique({
+        criticName: critic.name,
+        criticRole: critic.role,
+        mission,
+        otherOutputs,
+      });
+
+      if (!result) continue;
+
+      for (const obj of result.objections) {
+        const targetAgent = Object.values(taskAssignments).find((a) => a.name === obj.targetAgent);
+        if (!targetAgent) continue;
+        const entry: DeliberationEntry = {
+          kind: "objection",
+          criticId: critic.id,
+          criticName: critic.name,
+          targetAgentId: targetAgent.id,
+          targetAgentName: targetAgent.name,
+          taskType: obj.taskType,
+          claim: obj.claim,
+          severity: obj.severity,
+        };
+        allEntries.push(entry);
+        emit({ type: "deliberation_entry", entry });
+
+        // Revise if critical
+        if (obj.severity === "critical" && outputs[obj.taskType]) {
+          const revised = await generateRevision({
+            agentName: targetAgent.name,
+            agentRole: targetAgent.role,
+            mission,
+            taskType: obj.taskType,
+            originalOutput: outputs[obj.taskType],
+            objectionClaim: obj.claim,
+          });
+          if (revised) {
+            revisedOutputs[obj.taskType] = revised;
+            const revision: DeliberationRevision = {
+              agentId: targetAgent.id,
+              agentName: targetAgent.name,
+              taskType: obj.taskType,
+              summary: `Addressed: "${obj.claim.slice(0, 80)}"`,
+            };
+            allRevisions.push(revision);
+            emit({ type: "deliberation_revision", revision });
+          }
+        }
+      }
+
+      for (const end of result.endorsements) {
+        const targetAgent = Object.values(taskAssignments).find((a) => a.name === end.targetAgent);
+        if (!targetAgent) continue;
+        const entry: DeliberationEntry = {
+          kind: "endorsement",
+          criticId: critic.id,
+          criticName: critic.name,
+          targetAgentId: targetAgent.id,
+          targetAgentName: targetAgent.name,
+          taskType: end.taskType,
+          claim: end.claim,
+        };
+        allEntries.push(entry);
+        emit({ type: "deliberation_entry", entry });
+      }
+    }
+  }
+
+  emit({
+    type: "deliberation_done",
+    objections: allEntries.filter((e) => e.kind === "objection").length,
+    endorsements: allEntries.filter((e) => e.kind === "endorsement").length,
+    revisions: allRevisions.length,
+  });
+
+  return { revisedOutputs, allEntries, allRevisions };
+}
+
 export async function runMission(mission: string, clientRunNumber?: number, onEvent?: (e: StreamEvent) => void): Promise<MissionResult> {
   const emit = (e: StreamEvent) => { try { onEvent?.(e); } catch {} };
   resetTokenAccumulator();
@@ -305,6 +497,23 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
     await updateAgent(agent.id, { status: "done" });
     await appendMissionEvent({ eventType: "agent_completed", missionId, runNumber: runNum, timestamp: Date.now(), agentId: agent.id, agentName: agent.name, message: `${agent.name} completed task: ${task.type}` });
     emit({ type: "agent_done", agentId: agent.id, agentName: agent.name, taskType: task.type, output });
+  }
+
+  // Deliberation — critics review outputs, flag issues, agents revise
+  emit({ type: "phase", phase: "deliberating" });
+  const { revisedOutputs, allEntries: deliberationEntries, allRevisions } = await runDeliberation({
+    outputs,
+    taskAssignments,
+    selectedAgents,
+    mission,
+    runNum,
+    emit,
+  });
+  // Apply revisions back to tasks
+  for (const task of tasks) {
+    if (revisedOutputs[task.type] && revisedOutputs[task.type] !== outputs[task.type]) {
+      task.output = revisedOutputs[task.type];
+    }
   }
 
   // Evaluation
@@ -612,6 +821,7 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
     runCost,
     weaveTraceUrl,
     marketDecisionLog,
+    deliberationLog: { entries: deliberationEntries, revisions: allRevisions },
   };
 
   await recordMission(result);
