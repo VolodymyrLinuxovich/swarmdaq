@@ -9,6 +9,14 @@ const mono = JetBrains_Mono({
   weight: ["400", "500", "600", "700"],
 });
 
+import type { Viewport } from "next";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 export const metadata: Metadata = {
   title: "SwarmDAQ — The Performance Exchange for AI Agents",
   description:

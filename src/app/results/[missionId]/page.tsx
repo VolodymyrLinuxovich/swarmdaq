@@ -106,14 +106,14 @@ export default function ResultsPage({ params }: { params: Promise<{ missionId: s
             <div className="h-3 w-px bg-slate-800" />
             <span className="text-xs text-slate-600">mission result</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={copyLink}
-              className="px-3 py-1.5 text-xs font-mono rounded border border-slate-700 text-slate-400 hover:border-green-600 hover:text-green-400 transition-colors"
+              className="px-2 sm:px-3 py-1.5 text-xs font-mono rounded border border-slate-700 text-slate-400 hover:border-green-600 hover:text-green-400 transition-colors"
             >
-              {copied ? "✓ link copied" : "⎘ copy link"}
+              {copied ? "✓ copied" : "⎘ copy"}
             </button>
-            <Link href="/leaderboard" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">leaderboard</Link>
+            <Link href="/leaderboard" className="hidden sm:inline text-xs text-slate-600 hover:text-slate-400 transition-colors">leaderboard</Link>
             <Link href="/demo" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">demo</Link>
           </div>
         </div>
@@ -123,13 +123,13 @@ export default function ResultsPage({ params }: { params: Promise<{ missionId: s
         {/* Header card */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
           className="border border-slate-800 rounded p-5 bg-black/60">
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <div>
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="flex-1 min-w-0">
               <div className="text-xs text-slate-600 uppercase tracking-wider mb-1">Run #{mission.runNumber} · {missionId.slice(0, 8)}</div>
-              <div className="text-slate-300 text-sm leading-relaxed max-w-2xl">{mission.mission}</div>
+              <div className="text-slate-300 text-sm leading-relaxed">{mission.mission}</div>
             </div>
             <div className="text-center flex-shrink-0">
-              <div className="text-5xl font-black" style={{ color: overallColor }}>{score.overall}</div>
+              <div className="text-4xl sm:text-5xl font-black" style={{ color: overallColor }}>{score.overall}</div>
               <div className="text-xs text-slate-600 mt-1">/ 100</div>
             </div>
           </div>

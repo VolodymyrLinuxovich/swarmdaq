@@ -666,7 +666,7 @@ function ComparisonView({ run1, run4 }: { run1: MissionResult; run4: MissionResu
   return (
     <div>
       {/* Headline comparison */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
         <div className="p-3 rounded border border-amber-500/20 bg-amber-950/10">
           <div className="text-xs text-amber-500/60 font-mono mb-1">Run 1 headline · score 74</div>
           <div className="text-sm font-bold text-amber-400 leading-snug">{run1.output.landingHeadline}</div>
@@ -678,7 +678,7 @@ function ComparisonView({ run1, run4 }: { run1: MissionResult; run4: MissionResu
       </div>
       {/* Pitch segment comparison */}
       <div className="text-xs text-slate-600 uppercase tracking-wider mb-2">90-second pitch · segment by segment</div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {Array.from({ length: len }).map((_, i) => {
           const s1 = p1[i];
           const s4 = p4[i];
@@ -891,7 +891,7 @@ function AgentStudioModal({ onClose, onCreated }: { onClose: () => void; onCreat
             value={name} onChange={(e) => setName(e.target.value)}
             placeholder="e.g. DataScienceAgent"
             maxLength={40}
-            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-green-700 transition-colors font-mono"
+            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-base sm:text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-green-700 transition-colors font-mono"
           />
         </div>
 
@@ -902,7 +902,7 @@ function AgentStudioModal({ onClose, onCreated }: { onClose: () => void; onCreat
             value={role} onChange={(e) => setRole(e.target.value)}
             placeholder="e.g. Specializes in data-driven market sizing and TAM analysis"
             maxLength={120}
-            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-green-700 transition-colors font-mono"
+            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-base sm:text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-green-700 transition-colors font-mono"
           />
         </div>
 
@@ -1282,37 +1282,34 @@ export default function DemoPage() {
     <div className="min-h-screen bg-black grid-bg font-mono">
       {/* Nav */}
       <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between px-4 py-3 bg-black/90 backdrop-blur-sm border-b border-green-900/20 gap-2">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-xs neon-green font-black tracking-widest">SWARMDAQ</Link>
-          <div className="h-3 w-px bg-slate-700" />
-          <span className="text-xs text-slate-600">live demo terminal</span>
-        </div>
         <div className="flex items-center gap-3">
+          <Link href="/" className="text-xs neon-green font-black tracking-widest">SWARMDAQ</Link>
+          <div className="h-3 w-px bg-slate-700 hidden sm:block" />
+          <span className="hidden sm:inline text-xs text-slate-600">live demo terminal</span>
+        </div>
+        <div className="flex items-center gap-2 sm:gap-3">
           {sessionCost > 0 && (
-            <span className="text-xs font-mono text-amber-500/80">
-              session: ${sessionCost.toFixed(5)}
+            <span className="hidden sm:inline text-xs font-mono text-amber-500/80">
+              ${sessionCost.toFixed(5)}
             </span>
           )}
           {weaveCount > 0 && (
             <a href="https://wandb.ai/vborysenko-uc-berkeley/swarmdaq/weave" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1 text-xs font-mono text-purple-500 hover:text-purple-300 transition-colors">
               <motion.span animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full bg-purple-500 inline-block" />
-              {weaveCount} traces ↗
+              <span className="hidden sm:inline">{weaveCount} traces ↗</span>
+              <span className="sm:hidden">traces</span>
             </a>
-          )}
-          {weaveCount === 0 && (
-            <a href="https://wandb.ai/vborysenko-uc-berkeley/swarmdaq/weave" target="_blank" rel="noopener noreferrer"
-              className="text-xs text-purple-800 hover:text-purple-500 transition-colors">W&B traces ↗</a>
           )}
           <div className="flex items-center gap-1.5 text-xs cursor-pointer select-none" onClick={() => setShowMath((v) => !v)}>
             <div className="w-8 h-4 rounded-full border transition-colors" style={{ borderColor: showMath ? "#00ff88" : "#334155", backgroundColor: showMath ? "rgba(0,255,136,0.2)" : "transparent" }}>
               <div className="w-3 h-3 rounded-full m-0.5 transition-transform" style={{ backgroundColor: showMath ? "#00ff88" : "#475569", transform: showMath ? "translateX(16px)" : "translateX(0)" }} />
             </div>
-            <span className="text-slate-500">math engine</span>
+            <span className="hidden sm:inline text-slate-500">math</span>
           </div>
-          <Link href="/leaderboard" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">leaderboard</Link>
-          <Link href="/benchmark" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">benchmarks</Link>
-          <Link href="/architecture" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">architecture</Link>
+          <Link href="/leaderboard" className="hidden sm:inline text-xs text-slate-600 hover:text-slate-400 transition-colors">leaderboard</Link>
+          <Link href="/benchmark" className="hidden md:inline text-xs text-slate-600 hover:text-slate-400 transition-colors">benchmarks</Link>
+          <Link href="/architecture" className="hidden md:inline text-xs text-slate-600 hover:text-slate-400 transition-colors">architecture</Link>
           <button onClick={resetDemo} className="text-xs text-red-700 hover:text-red-500 transition-colors">reset</button>
         </div>
       </nav>
@@ -1379,7 +1376,7 @@ export default function DemoPage() {
             )}
           </div>
           <textarea value={mission} onChange={(e) => setMission(e.target.value)} rows={3}
-            className="w-full bg-transparent text-sm text-slate-300 resize-none outline-none placeholder-slate-700 leading-relaxed"
+            className="w-full bg-transparent text-base sm:text-sm text-slate-300 resize-none outline-none placeholder-slate-700 leading-relaxed"
             placeholder="Enter your mission..." />
           <div className="mt-3 p-3 rounded border border-slate-800 bg-slate-950/60 text-xs font-mono space-y-1.5">
             {[
@@ -1573,7 +1570,7 @@ export default function DemoPage() {
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-4 gap-2 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   {[
                     { label: "Run 1", value: "74", color: "#fbbf24", note: "factuality gap" },
                     { label: "Run 2", value: "91", color: "#00ff88", note: "market learned" },
@@ -1587,7 +1584,7 @@ export default function DemoPage() {
                     </div>
                   ))}
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-xs font-mono">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-mono">
                   {[
                     { label: "Factuality gain", value: "+26 pts", color: "#00ff88" },
                     { label: "Risk reduction", value: "−23%", color: "#00aaff" },

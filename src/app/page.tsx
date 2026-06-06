@@ -216,18 +216,18 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-black grid-bg">
       {/* Nav */}
-      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 bg-black/80 backdrop-blur-sm border-b border-green-900/20">
+      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-black/80 backdrop-blur-sm border-b border-green-900/20">
         <div className="flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
           <span className="text-sm font-bold tracking-widest neon-green">SWARMDAQ</span>
         </div>
-        <div className="flex items-center gap-6">
-          <Link href="/architecture" className="text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Architecture</Link>
-          <Link href="/benchmark" className="text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Benchmarks</Link>
-          <Link href="/demo" className="text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Demo</Link>
+        <div className="flex items-center gap-3 sm:gap-6">
+          <Link href="/architecture" className="hidden sm:inline text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Architecture</Link>
+          <Link href="/benchmark" className="hidden sm:inline text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Benchmarks</Link>
+          <Link href="/demo" className="hidden sm:inline text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Demo</Link>
           <Link
             href="/demo"
-            className="px-4 py-2 text-xs font-bold border border-green-500/50 text-green-400 rounded hover:bg-green-500/10 hover:border-green-400 transition-all font-mono"
+            className="px-3 sm:px-4 py-2 text-xs font-bold border border-green-500/50 text-green-400 rounded hover:bg-green-500/10 hover:border-green-400 transition-all font-mono"
           >
             Launch Demo →
           </Link>
@@ -240,7 +240,7 @@ export default function LandingPage() {
       </div>
 
       {/* HERO */}
-      <section className="relative px-6 py-24 max-w-7xl mx-auto">
+      <section className="relative px-4 sm:px-6 py-16 sm:py-24 max-w-7xl mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
           {/* Left: Copy */}
           <div>
@@ -254,15 +254,15 @@ export default function LandingPage() {
                 <span className="text-xs font-mono text-green-400">LIVE · WeaveHacks 2025</span>
               </div>
 
-              <h1 className="text-5xl lg:text-7xl font-black tracking-tight leading-none mb-4">
+              <h1 className="text-4xl sm:text-5xl lg:text-7xl font-black tracking-tight leading-none mb-4">
                 <span className="neon-green">SwarmDAQ</span>
               </h1>
 
-              <p className="text-xl text-slate-400 mb-3 font-mono">
+              <p className="text-base sm:text-xl text-slate-400 mb-3 font-mono">
                 The performance exchange for AI agents.
               </p>
 
-              <p className="text-2xl lg:text-3xl font-bold text-slate-200 leading-tight mb-8">
+              <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-200 leading-tight mb-8">
                 Everyone is building agents.<br />
                 <span className="text-green-400">SwarmDAQ decides which agents are actually worth hiring.</span>
               </p>
@@ -275,29 +275,29 @@ export default function LandingPage() {
                 Agents bid on tasks. A market-maker routes using UCB1 bandits, Bayesian reputation, and portfolio optimization. Weave traces every move. Redis stores what worked. The next run is smarter.
               </p>
 
-              <div className="flex flex-wrap gap-4">
+              <div className="flex flex-wrap gap-3">
                 <Link
                   href="/demo"
-                  className="px-8 py-4 bg-green-500 text-black font-black text-sm rounded hover:bg-green-400 transition-all glow-green font-mono tracking-wider"
+                  className="flex-1 sm:flex-none text-center px-6 sm:px-8 py-3 sm:py-4 bg-green-500 text-black font-black text-sm rounded hover:bg-green-400 transition-all glow-green font-mono tracking-wider"
                 >
                   ⚡ LAUNCH LIVE DEMO
                 </Link>
                 <Link
                   href="/benchmark"
-                  className="px-8 py-4 border border-purple-500/60 text-purple-400 text-sm font-bold rounded hover:bg-purple-500/10 transition-all font-mono"
+                  className="hidden sm:inline-flex items-center px-8 py-4 border border-purple-500/60 text-purple-400 text-sm font-bold rounded hover:bg-purple-500/10 transition-all font-mono"
                 >
                   📊 Run Benchmarks
                 </Link>
                 <Link
                   href="/architecture"
-                  className="px-8 py-4 border border-slate-700 text-slate-300 text-sm font-bold rounded hover:border-slate-500 transition-all font-mono"
+                  className="hidden sm:inline-flex items-center px-8 py-4 border border-slate-700 text-slate-300 text-sm font-bold rounded hover:border-slate-500 transition-all font-mono"
                 >
                   Architecture
                 </Link>
               </div>
 
               {/* Stats row */}
-              <div className="flex gap-8 mt-12 pt-8 border-t border-slate-900">
+              <div className="flex gap-6 sm:gap-8 mt-8 sm:mt-12 pt-6 sm:pt-8 border-t border-slate-900 flex-wrap">
                 {[
                   { label: "Agents", value: 9, prefix: "" },
                   { label: "Math Models", value: 7, prefix: "" },
@@ -335,7 +335,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {AGENTS.map((agent, i) => (
                 <AgentNode key={agent.name} agent={agent} delay={i * 0.05} />
               ))}
@@ -463,7 +463,8 @@ export default function LandingPage() {
                       <div
                         className="h-1.5 rounded"
                         style={{
-                          width: `${Math.abs(parseFloat(row.val)) * 200}px`,
+                          width: `${Math.abs(parseFloat(row.val)) * 100}px`,
+                          maxWidth: "120px",
                           backgroundColor: row.color,
                           opacity: 0.7,
                         }}
@@ -685,7 +686,7 @@ export default function LandingPage() {
           viewport={{ once: true }}
         >
           <div className="text-xs font-mono text-green-500/70 mb-6 tracking-widest">THE MARKET IS OPEN</div>
-          <h2 className="text-5xl font-black text-slate-100 mb-4 leading-tight">
+          <h2 className="text-3xl sm:text-5xl font-black text-slate-100 mb-4 leading-tight">
             Ready to see the swarm<br />
             <span className="neon-green">learn in real time?</span>
           </h2>
