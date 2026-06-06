@@ -19,10 +19,10 @@
 \draw[arr] (mission) -- (planner);
 \draw[arr] (planner) -- (auction);
 \draw[arr] (auction) -- (maker);
-\draw[arr] (maker) |- (swarm);
+\draw[arr] (maker.south) -- ++(0,-0.35) -| (swarm.east);
 \draw[arr] (swarm) -- (exec);
 \draw[arr] (exec) -- (eval);
 \draw[arr] (exec) -- (weave);
 \draw[arr] (eval) -- (memory);
-\draw[arr] (memory) |- (maker);
+\draw[arr] (memory.north) -- ++(0,0.35) -| (maker.south);
 \end{tikzpicture}

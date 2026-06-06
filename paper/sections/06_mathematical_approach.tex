@@ -4,25 +4,25 @@ The strongest technical claim of \systemname{} is that routing should be a score
 
 \subsection{Agent Utility and Bidding}
 
-For task \(t\), agent \(i\) forms a utility bid from expected quality, confidence, trust, cost, latency, and risk. Let \(\mathrm{Skill}_{i,t}\in[0,1]\) be the fraction of required skills covered by the agent. The implementation estimates expected quality as
+For task \(t\), agent \(i\) forms a utility bid from expected quality, confidence, trust, cost, latency, and risk. Let \(s_{i,t}\in[0,1]\) be the fraction of required skills covered by the agent, \(p_i\in[0,1]\) be the agent's confidence, and \(h_i\in[0,1]\) be its normalized hallucination-risk estimate. The implementation estimates expected quality as
 \begin{equation}
 \hat{q}_{i,t} =
 \mathrm{clip}_{[0,1]}
 \left(
-0.4\,\mathrm{Skill}_{i,t}
+0.4\,s_{i,t}
 +0.3\,r_i
-+0.3\,\mathrm{confidence}_i
++0.3\,p_i
 \right),
 \end{equation}
 where \(r_i\) is the Bayesian mean reputation. The bid utility is
 \begin{equation}
 b_{i,t} =
 0.40\,\hat{q}_{i,t}
-+0.25\,\mathrm{confidence}_i
++0.25\,p_i
 +0.20\,r_i
 -0.10\,\tilde{c}_i
 -0.05\,\tilde{l}_i
--0.10\,\mathrm{risk}_i.
+-0.10\,h_i.
 \end{equation}
 Here \(\tilde{c}_i\) and \(\tilde{l}_i\) are normalized cost and latency. The auction is Vickrey-inspired: bids are sorted by utility, the winner is marked, and the winner's clearing price is the second-best bid's cost. This is not a full economic market with enforceable payments, but it makes the selection mechanism visible and creates an interface for richer pricing later.
 
@@ -121,34 +121,34 @@ where \(F(S)\) is the full swarm score. The current implementation uses role-imp
 
 \subsection{Final MarketMaker Scoring Function}
 
-The final routing score combines the above components:
+The final routing score combines the above components. To avoid long variable names in the equations, write \(z_i\) for the \marketmaker{} score, \(e_i\) for the UCB exploration score, \(\rho_i\) for normalized Elo, \(d_i\) for collaboration history, and \(f_i\) for factuality:
 \begin{align}
-\mathrm{Score}_i =
-&\; w_s \mathrm{Skill}_{i,t}
-+ w_r \mathrm{Reputation}_i
-+ w_u \mathrm{UCB}_i
-+ w_b \mathrm{Bid}_{i,t}
-+ w_e \mathrm{Elo}_i
-+ w_g \mathrm{GraphTrust}_i \notag\\
-&+ w_{\mathrm{collab}}\mathrm{Collaboration}_i
-+ w_f \mathrm{Factuality}_i
-- w_c \mathrm{Cost}_i
-- w_l \mathrm{Latency}_i
-- w_{\mathrm{unc}}\mathrm{Uncertainty}_i.
+z_i =
+&\; w_s s_{i,t}
++ w_r r_i
++ w_e e_i
++ w_b b_{i,t}
++ w_\rho \rho_i
++ w_g g_i \notag\\
+&+ w_d d_i
++ w_f f_i
+- w_c \tilde{c}_i
+- w_l \tilde{l}_i
+- w_u u_i.
 \end{align}
 In the implemented score:
 \begin{align}
-\mathrm{Score}_i =
-&\; 0.20\,\mathrm{Skill}_{i,t}
+z_i =
+&\; 0.20\,s_{i,t}
 +0.18\,r_i
-+0.16\,\mathrm{UCB}_i
++0.16\,e_i
 +0.14\,b_{i,t}
-+0.12\,\widetilde{\mathrm{Elo}}_i
++0.12\,\rho_i
 +0.08\,g_i \notag\\
-&+0.07\,\mathrm{Collaboration}_i
-+0.05\,\mathrm{Factuality}_i
+&+0.07\,d_i
++0.05\,f_i
 -0.05\,\tilde{c}_i
 -0.05\,\tilde{l}_i
 -0.10\,u_i.
 \end{align}
-Each term is bounded or normalized to keep the score interpretable. Skill match anchors the routing decision in task relevance. Reputation and UCB balance historical trust with exploration. Bid utility captures agent-specific confidence, quality, cost, latency, and risk. Elo provides pairwise strength. Graph trust rewards useful collaborators. Cost, latency, and uncertainty penalize expensive or unreliable choices.
+Each term is bounded or normalized to keep the score interpretable. Skill match \(s_{i,t}\) anchors the routing decision in task relevance. Reputation \(r_i\) and UCB score \(e_i\) balance historical trust with exploration. Bid utility \(b_{i,t}\) captures agent-specific confidence, quality, cost, latency, and risk. Elo \(\rho_i\) provides pairwise strength. Graph trust \(g_i\) rewards useful collaborators. Cost, latency, and uncertainty penalize expensive or unreliable choices.

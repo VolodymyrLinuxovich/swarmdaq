@@ -17,8 +17,8 @@
 \draw[arr] (beta) -- (elo);
 \draw[arr] (eval) -- (shapley);
 \draw[arr] (shapley) -- (graph);
-\draw[arr] (elo) |- (memory);
+\draw[arr] (elo.east) -- ++(0.45,0) |- (memory.north);
 \draw[arr] (graph) -- (memory);
 \draw[arr] (memory) -- (next);
-\draw[arr] (next.west) -- ++(-5.8,0) |- (eval.west);
+\draw[arr] (next.south) -- ++(0,-0.35) -| ($(eval.west)+(-0.55,0)$) -- (eval.west);
 \end{tikzpicture}

@@ -15,12 +15,12 @@
 \draw[arr] (tasks) -- (bids);
 \draw[arr] (bids) -- (score);
 \draw[arr] (score) -- (select);
-\draw[arr] (select) |- (execute);
+\draw[arr] (select.south) -- ++(0,-0.35) -| (execute.east);
 \draw[arr] (execute) -- (eval);
 \draw[arr] (eval) -- (update);
-\draw[arr] (update) |- (tasks);
+\draw[arr] (update.west) -- ++(-0.6,0) |- (tasks.south);
 
 \node[draw=orange!70!black, fill=orange!8, rounded corners=2pt, align=center, above=0.75cm of score, minimum width=4.5cm] (signals)
 {skill, UCB, Beta trust, Elo, graph trust, cost, latency};
-\draw[arr] (signals) -- (score);
+\draw[arr] (signals.south) -- (score.north);
 \end{tikzpicture}

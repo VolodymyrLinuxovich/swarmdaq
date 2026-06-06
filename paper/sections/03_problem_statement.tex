@@ -4,9 +4,9 @@ Let \(M\) denote a user mission, such as producing a launch plan, market analysi
 \[
 T = \{t_1,t_2,\ldots,t_m\}.
 \]
-Let \(A = \{a_1,a_2,\ldots,a_n\}\) be the set of candidate agents. Each agent \(a_i\) has skills, historical performance, cost, latency, uncertainty, reputation, and collaboration evidence stored in history \(H\). The system must choose a selected swarm \(S \subseteq A\) and an assignment policy \(\pi:T \rightarrow S\), where \(\pi(t)\) is the agent chosen for task \(t\).
+Let \(A = \{a_1,a_2,\ldots,a_n\}\) be the set of candidate agents. Each agent \(a_i\) has a skill set \(K_i\), historical performance, cost, latency, uncertainty, reputation, and collaboration evidence stored in history \(H\). Each task \(t\) has a required skill set \(K_t\). The system must choose a selected swarm \(S \subseteq A\) and an assignment policy \(\pi:T \rightarrow S\), where \(\pi(t)\) is the agent chosen for task \(t\).
 
-For each agent-task pair \((i,t)\), define an expected quality estimate \(q_{i,t}\), cost \(c_i\), latency \(l_i\), uncertainty \(u_i\), reputation \(r_i\), graph-trust score \(g_i\), and bid utility \(b_{i,t}\). The technical goal is to maximize expected mission quality while minimizing cost, latency, uncertainty, and hallucination risk:
+For each agent-task pair \((i,t)\), define an expected quality estimate \(q_{i,t}\), cost \(c_i\), latency \(l_i\), uncertainty \(u_i\), reputation \(r_i\), graph-trust score \(g_i\), and bid utility \(b_{i,t}\). For compact notation, let \(h(S,M,H)\) denote hallucination risk for swarm \(S\), mission \(M\), and history \(H\). The technical goal is to maximize expected mission quality while minimizing cost, latency, uncertainty, and hallucination risk:
 \begin{equation}
 \max_{S,\pi}
 \left[
@@ -15,12 +15,12 @@ For each agent-task pair \((i,t)\), define an expected quality estimate \(q_{i,t
 - \lambda_c \sum_{a_i \in S} c_i
 - \lambda_l \sum_{t \in T} l_{\pi(t)}
 - \lambda_u \sum_{a_i \in S} u_i
-- \lambda_h \mathrm{HallucinationRisk}(S,M,H)
+- \lambda_h h(S,M,H)
 \right].
 \end{equation}
 The optimization is constrained by task coverage:
 \begin{equation}
-\forall t \in T,\quad \mathrm{skills}(\pi(t)) \cap \mathrm{requiredSkills}(t) \neq \emptyset,
+\forall t \in T,\quad K_{\pi(t)} \cap K_t \neq \emptyset,
 \end{equation}
 and by the practical requirement that the decision must be explainable to the user. It is not enough to return a final answer; a user should be able to inspect which agents bid, which agent won, which signals influenced the routing decision, how the output was evaluated, and how the result changed future reputation.
 
