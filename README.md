@@ -55,8 +55,9 @@ Agents bid on tasks. A MarketMaker selects the optimal swarm. An EvaluatorAgent 
 | Area | Stack |
 |------|-------|
 | **Frontend** | Next.js App Router · React · TypeScript |
-| **Styling** | Tailwind CSS |
+| **Styling** | Tailwind CSS v4 |
 | **Animation** | Framer Motion |
+| **Generative UI** | CopilotKit 1.59 |
 | **Agent execution** | Gemini via `@google/genai` |
 | **Tracing** | W&B Weave with in-memory fallback |
 | **Memory** | Redis / Upstash Redis with in-memory fallback |
@@ -143,10 +144,42 @@ Every mission produces a visible market loop:
 2. Collect bids.
 3. Select a swarm.
 4. Run agents.
-5. Trace execution.
-6. Evaluate output.
-7. Update reputation.
-8. Improve the next run.
+5. **Deliberate** — the swarm critiques itself before the final eval.
+6. Trace execution.
+7. Evaluate output.
+8. Update reputation.
+9. Improve the next run.
+
+---
+
+## Agent Deliberation
+
+After the swarm produces initial outputs but before the EvaluatorAgent issues final scores, a deliberation round runs automatically.
+
+SkepticAgent and SourceVerifierAgent read every agent output and emit structured objections and endorsements in real time.
+
+If an objection is raised, the responsible agent has the opportunity to issue a revision before the evaluation closes.
+
+The deliberation panel is visible live in the demo UI, including the objection text, confidence level, and any revision responses.
+
+This is what separates SwarmDAQ from a simple multi-agent pipeline: the swarm self-corrects before the judge scores it.
+
+---
+
+## Agent Studio — Custom Agents
+
+SwarmDAQ supports user-deployed custom agents directly from the demo UI.
+
+You can configure:
+
+- agent name, role, and specialty
+- skill set (matching against task types)
+- price, latency, and initial reputation
+- confidence and bid strategy
+
+Once deployed, your agent enters the live market, competes for tasks against the built-in agents, and accumulates its own Bayesian reputation, Elo rating, and collaboration history.
+
+Custom agents are stored in Redis and persist across runs.
 
 ---
 
@@ -377,15 +410,19 @@ The SwarmDAQ dashboard includes:
 - mission input
 - animated agent market
 - bidding interface
-- selected swarm panel
+- selected swarm panel with MarketMaker score breakdown and candidate reason strings
+- live agent deliberation feed (objections, endorsements, revisions)
 - agent reputation board
 - W&B Weave-style trace timeline
 - evaluation scorecards
 - UCB / Bayesian / Elo math panels
 - run-to-run improvement view
-- self-improvement demo arc
+- shareable mission results pages (`/results/:missionId`)
+- live agent leaderboard (`/leaderboard`) with BUY / HOLD / SELL / WATCH signals
+- Agent Studio for deploying custom agents
+- CopilotKit generative UI sidebar
 - architecture page
-- demo page
+- demo page (mobile-responsive, iPhone 15 safe-area aware)
 
 The UI is designed to make the market visible. You can watch agents compete, win, fail, recover, and improve.
 
@@ -475,54 +512,55 @@ This is the core demo: a swarm that learns, over-corrects, detects regression, a
 
 ```text
 swarmdaq/
-├── public/
-│   ├── file.svg
-│   ├── globe.svg
-│   ├── next.svg
-│   ├── vercel.svg
-│   └── window.svg
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── agents/
-│   │   │   │   └── route.ts
-│   │   │   ├── mission/
-│   │   │   │   └── route.ts
-│   │   │   ├── reset-demo/
-│   │   │   │   └── route.ts
-│   │   │   └── traces/
-│   │   │       └── route.ts
-│   │   ├── architecture/
-│   │   │   └── page.tsx
-│   │   ├── demo/
-│   │   │   └── page.tsx
+│   │   │   ├── agents/           # GET agent list + custom agent CRUD
+│   │   │   ├── history/          # Mission result + event log retrieval
+│   │   │   ├── leaderboard/      # Live leaderboard endpoint
+│   │   │   ├── market-feed/      # SSE market event stream
+│   │   │   ├── mission/stream    # SSE mission execution stream
+│   │   │   ├── reset-demo/       # Reset Redis to initial state
+│   │   │   ├── copilotkit/       # CopilotKit runtime endpoint
+│   │   │   └── traces/           # W&B Weave trace retrieval
+│   │   ├── architecture/         # Architecture explainer page
+│   │   ├── benchmark/            # Benchmark comparison page
+│   │   ├── demo/                 # Main demo terminal UI
+│   │   ├── leaderboard/          # Live agent leaderboard page
+│   │   ├── results/[missionId]/  # Shareable mission results page
 │   │   ├── globals.css
 │   │   ├── layout.tsx
-│   │   └── page.tsx
+│   │   └── page.tsx              # Landing page
+│   ├── components/
+│   │   ├── DeliberationFeed.tsx  # Live deliberation panel
+│   │   └── SwarmCopilot.tsx      # CopilotKit generative UI sidebar
 │   └── lib/
 │       ├── math/
-│       │   ├── agentMath.ts
-│       │   ├── auction.ts
-│       │   ├── bandits.ts
-│       │   ├── contribution.ts
-│       │   ├── graphTrust.ts
-│       │   ├── portfolio.ts
-│       │   └── reputation.ts
+│       │   ├── agentMath.ts      # normalize, clamp01, weightedSum
+│       │   ├── auction.ts        # Vickrey-inspired utility bidding
+│       │   ├── bandits.ts        # UCB1 bandit routing
+│       │   ├── contribution.ts   # Shapley-style contribution scoring
+│       │   ├── graphTrust.ts     # PageRank-style trust graph
+│       │   ├── portfolio.ts      # Markowitz-style swarm optimization
+│       │   └── reputation.ts     # Bayesian Beta + Elo updates
+│       ├── __tests__/            # Vitest unit tests (43 tests)
+│       │   ├── evaluation.test.ts
+│       │   ├── marketmaker.test.ts
+│       │   ├── mode.test.ts
+│       │   └── reputation.test.ts
 │       ├── agents.ts
+│       ├── evaluation.ts         # LLM eval → content rubric fallback
 │       ├── gemini.ts
+│       ├── marketHistory.ts      # Mission event log
 │       ├── memory.ts
-│       ├── messages.ts
-│       ├── orchestrator.ts
+│       ├── mode.ts               # ExecMode: LIVE | SEEDED_DEMO | FALLBACK
+│       ├── orchestrator.ts       # Core mission + market loop
 │       ├── trace.ts
 │       └── types.ts
+├── vitest.config.ts
 ├── .env.example
-├── AGENTS.md
-├── CLAUDE.md
-├── eslint.config.mjs
 ├── next.config.ts
 ├── package.json
-├── postcss.config.mjs
-├── tsconfig.json
 └── README.md
 ```
 
@@ -571,6 +609,10 @@ WANDB_PROJECT=swarmdaq
 WANDB_ENTITY=your_wandb_entity_optional
 
 REDIS_URL=your_redis_url_optional
+
+# Optional: force execution mode (LIVE | SEEDED_DEMO | FALLBACK)
+# Default: LIVE if an API key is present, FALLBACK if not
+SWARMDAQ_MODE=SEEDED_DEMO
 ```
 
 Never commit real API keys to GitHub. Add production secrets through Vercel environment variables.
@@ -593,6 +635,7 @@ npm run dev
 npm run lint
 npm run typecheck
 npm run build
+npm test
 ```
 
 Use the UI demo controls to run repeated missions and show how the market improves across runs.
@@ -654,9 +697,22 @@ vercel --prod
 
 ---
 
+## Execution Modes
+
+SwarmDAQ has three clearly separated execution modes controlled by the `SWARMDAQ_MODE` environment variable.
+
+| Mode | Trigger | Behavior |
+|------|---------|----------|
+| `LIVE` | Default when `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set | Real MarketMaker selection, LLM-based eval (JSON parse → Gemini scoring → rubric fallback), content-driven rep updates |
+| `SEEDED_DEMO` | `SWARMDAQ_MODE=SEEDED_DEMO` | Scripted 4-run arc preserved for demo presentations. Deterministic scores, routing, and rep updates |
+| `FALLBACK` | No API keys present | Pure MarketMaker selection and content rubric scoring; hardcoded outputs for each task type |
+
+For hackathon demos, set `SWARMDAQ_MODE=SEEDED_DEMO` to guarantee the reliable 74→91→85→96 arc regardless of LLM nondeterminism.
+
+---
+
 ## Known Limitations
 
-- Some demo scores are deterministic to make the hackathon demo reliable.
 - Redis is optional; without it, the app uses in-memory fallback behavior.
 - W&B Weave tracing can fall back locally when credentials are unavailable.
 - The auction mechanism is Vickrey-inspired, not a full production economic market.
