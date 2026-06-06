@@ -18,6 +18,13 @@ jobs:
           root_file: paper/main.tex
           args: -pdf -interaction=nonstopmode -halt-on-error -file-line-error
 
+      - name: Normalize PDF path
+        run: |
+          if [ -f main.pdf ] && [ ! -f paper/main.pdf ]; then
+            mv main.pdf paper/main.pdf
+          fi
+          test -f paper/main.pdf
+
       - name: Upload compiled PDF
         uses: actions/upload-artifact@v4
         with:
