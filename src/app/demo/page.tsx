@@ -702,41 +702,43 @@ function ComparisonView({ run1, run4 }: { run1: MissionResult; run4: MissionResu
 
 // ── Live Agent Ticker ─────────────────────────────────────────────────────────
 
+const TICKER_STATIC = [
+  { text: "SkepticAgent", delta: "▲ +2", color: "#00ff88", label: "BUY" },
+  { text: "SourceVerifier", delta: "▲ +3", color: "#00ff88", label: "BUY" },
+  { text: "ResearchAgent", delta: "▼ -4", color: "#ef4444", label: "SELL" },
+  { text: "EvaluatorAgent", delta: "▲ +2", color: "#00ff88", label: "BUY" },
+  { text: "PitchAgent", delta: "▲ +1", color: "#fbbf24", label: "HOLD" },
+  { text: "MarketMaker", delta: "▲ +1", color: "#00ff88", label: "BUY" },
+  { text: "BuilderAgent", delta: "─ +0", color: "#64748b", label: "HOLD" },
+  { text: "PlannerAgent", delta: "─ +0", color: "#64748b", label: "HOLD" },
+  { text: "ReputationAgent", delta: "▲ +1", color: "#00ff88", label: "BUY" },
+];
+
 function LiveTicker({ agents, reputationChanges }: { agents: Agent[]; reputationChanges?: MissionResult["reputationChanges"] }) {
   const labelColors: Record<string, string> = { BUY: "#00ff88", HOLD: "#fbbf24", SELL: "#ef4444", WATCH: "#00aaff" };
 
-  // Build a flat list of alternating [label, delta] tokens
-  const tokens: Array<{ text: string; color: string; bold?: boolean }> = [];
-  for (const a of agents) {
-    const change = reputationChanges?.find((c) => c.agentId === a.id);
-    const label = getAgentLabel(a);
-    const lc = labelColors[label];
+  const source = agents.length
+    ? agents.map((a) => {
+        const label = getAgentLabel(a);
+        const change = reputationChanges?.find((c) => c.agentId === a.id);
+        const delta = change && change.delta !== 0
+          ? (change.delta > 0 ? `▲ +${change.delta}` : `▼ ${change.delta}`)
+          : "─ live";
+        return { text: a.name.replace("Agent", ""), delta, color: labelColors[label] ?? "#475569", label };
+      })
+    : TICKER_STATIC;
 
-    // label chip
-    tokens.push({ text: label, color: lc, bold: true });
-
-    // delta only if there was a change
-    if (change && change.delta !== 0) {
-      const deltaText = change.delta > 0 ? `▲ +${change.delta}` : `▼ ${change.delta}`;
-      const deltaColor = change.delta > 0 ? "#00ff88" : "#ef4444";
-      tokens.push({ text: deltaText, color: deltaColor, bold: true });
-    }
-
-    tokens.push({ text: "·", color: "#1e293b" });
-  }
-
-  const doubled = [...tokens, ...tokens];
+  const items = [...source, ...source];
 
   return (
-    <div className="overflow-hidden border-t border-b border-green-900/30 py-1.5 bg-black/70">
-      <div className="ticker-inner">
-        {doubled.map((tok, i) => (
-          <span
-            key={i}
-            className="whitespace-nowrap text-xs font-mono px-2"
-            style={{ color: tok.color, fontWeight: tok.bold ? 700 : 400 }}
-          >
-            {tok.text}
+    <div className="overflow-hidden border-t border-b border-green-900/40 py-2 bg-black/60">
+      <div className="ticker-inner gap-0">
+        {items.map((item, i) => (
+          <span key={i} className="whitespace-nowrap text-xs font-mono px-4 flex items-center gap-1.5">
+            <span className="text-slate-400">{item.text}</span>
+            <span className="font-bold" style={{ color: item.color }}>{item.delta}</span>
+            <span className="font-bold text-xs" style={{ color: item.color }}>{item.label}</span>
+            <span className="text-slate-700 ml-3">|</span>
           </span>
         ))}
       </div>
@@ -1342,9 +1344,7 @@ export default function DemoPage() {
       </div>
 
       {/* Live agent ticker */}
-      {liveAgents.length > 0 && (
-        <LiveTicker agents={liveAgents} reputationChanges={displayResult?.reputationChanges} />
-      )}
+      <LiveTicker agents={liveAgents} reputationChanges={displayResult?.reputationChanges} />
 
       {/* Fast demo timeline — shown when fast demo has results */}
       {fastDemoResults.length > 0 && (
