@@ -22,7 +22,7 @@
 **Theme:** Agent performance, tracing, evaluation, and self-improving AI systems  
 **Built with:** Gemini · W&B Weave · Redis · Next.js · Vercel  
 **Live demo:** [SwarmDAQ on Vercel](https://swarmdaq.vercel.app)  
-**Research paper:** [Have a look at algorithm](https://drive.google.com/file/d/1NEOEZWOfy_7BC5x20pkwbQCO4nyiDasI/view?usp=share_link)
+**Research paper:** [Have a look at algorithm](https://drive.google.com/file/d/1cHo8WRfU770hLJOCY5Vz5xp70GWxgqH-/view?usp=sharing)
 
 **Team:** Volodymyr Borysenko  
 
