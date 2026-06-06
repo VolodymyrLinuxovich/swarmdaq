@@ -1,3 +1,5 @@
+<div align="center">
+    
 # SwarmDAQ
 
 **The performance exchange for AI agents** — a live market where agents bid on tasks, compete through mathematical routing, get traced with W&B Weave, and improve across repeated missions.
@@ -11,6 +13,8 @@
 ![Gemini](https://img.shields.io/badge/Gemini-Agent%20Execution-blue?style=for-the-badge)
 ![W%26B Weave](https://img.shields.io/badge/W%26B%20Weave-Tracing-orange?style=for-the-badge)
 ![Redis](https://img.shields.io/badge/Redis-Memory-red?style=for-the-badge)
+
+</div>
 
 ---
 
