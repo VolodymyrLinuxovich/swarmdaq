@@ -1693,25 +1693,6 @@ export default function DemoPage() {
               </div>
             )}
 
-            {/* Why not a wrapper */}
-            <div className="terminal-card p-4">
-              <div className="card-heading mb-3">⚡ Why this is not a ChatGPT wrapper</div>
-              <div className="space-y-1.5">
-                {[
-                  { icon: "⚖️", text: "Agents compete for tasks before any generation happens" },
-                  { icon: "🧠", text: "MarketMaker routes using reputation + uncertainty, not random assignment" },
-                  { icon: "📊", text: "EvaluatorAgent scores output quality after every run" },
-                  { icon: "⭐", text: "ReputationAgent updates future routing based on results" },
-                  { icon: "💾", text: "Redis stores market memory — the next run is smarter" },
-                  { icon: "🔍", text: "Weave traces every mission event end-to-end" },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-start gap-2.5 py-1">
-                    <span className="flex-shrink-0 text-base">{item.icon}</span>
-                    <span className="prose-demo text-slate-400 leading-relaxed">{item.text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
 
             {!displayResult && !loading && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="terminal-card p-5">
