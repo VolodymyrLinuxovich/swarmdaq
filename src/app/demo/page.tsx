@@ -558,20 +558,182 @@ function RiskCard({ text }: { text: string }) {
   );
 }
 
-function OutputPanel({ result }: { result: MissionResult }) {
+function OutputPanel({ result, onRunAgain, loading }: {
+  result: MissionResult;
+  onRunAgain?: () => void;
+  loading?: boolean;
+}) {
   const [tab, setTab] = useState<"pitch" | "positioning" | "risks">("pitch");
+  const [liked, setLiked] = useState(false);
+  const [disliked, setDisliked] = useState(false);
   const [copied, setCopied] = useState(false);
-  const copyPitch = () => { navigator.clipboard.writeText(result.output.pitch); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+  const [showDislikeMenu, setShowDislikeMenu] = useState(false);
+
   const runColor = result.runNumber >= 4 ? "#22d3ee" : result.runNumber === 3 ? "#ef4444" : result.runNumber === 2 ? "#00ff88" : "#fbbf24";
+
+  const getTabText = () => {
+    if (tab === "pitch") return result.output.pitch;
+    if (tab === "positioning") return result.output.positioning;
+    return result.output.risks.join("\n");
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(getTabText()).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  const handleDownload = () => {
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-");
+    const agents = result.selectedAgents?.map((a) => a.name).join(", ") ?? "—";
+    const md = [
+      `# SwarmDAQ — Run #${result.runNumber} Output`,
+      ``,
+      `**Mission:** ${result.mission}`,
+      `**Run:** #${result.runNumber}`,
+      `**Timestamp:** ${ts}`,
+      `**Eval Score:** ${result.evalScore.overall}/100`,
+      `**Agents:** ${agents}`,
+      ``,
+      `---`,
+      ``,
+      `## Pitch Script`,
+      ``,
+      result.output.pitch,
+      ``,
+      `## Positioning`,
+      ``,
+      result.output.positioning,
+      ``,
+      `## Risks`,
+      ``,
+      result.output.risks.join("\n"),
+    ].join("\n");
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `swarmdaq-run-${result.runNumber}-output.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLike = () => {
+    setLiked((v) => !v);
+    if (!liked) { setDisliked(false); setShowDislikeMenu(false); }
+  };
+
+  const handleDislike = () => {
+    if (disliked) { setDisliked(false); setShowDislikeMenu(false); }
+    else { setDisliked(true); setLiked(false); setShowDislikeMenu(true); }
+  };
+
+  const DISLIKE_REASONS = ["factuality", "usefulness", "structure", "too vague", "too long"];
+
+  // Provider participation
+  const workerAgents = result.selectedAgents?.filter(
+    (a) => !["market_maker", "evaluator", "reputation", "planner"].includes(a.id)
+  ) ?? [];
+  const providerColors: Record<string, string> = { openai: "#00ff88", anthropic: "#f97316", gemini: "#00aaff" };
+  const providerLabels: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Google" };
+
   return (
     <div>
+      {/* Header row: title left, actions right */}
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <div className="card-heading">📋 Final Output — Run #{result.runNumber}</div>
+
+        {/* Provider participation badges */}
+        <div className="flex items-center gap-1.5 flex-1">
+          {workerAgents.map((a) => {
+            const pColor = providerColors[a.provider ?? "gemini"] ?? "#475569";
+            const pLabel = providerLabels[a.provider ?? "gemini"] ?? a.provider;
+            return (
+              <span key={a.id} className="text-xs font-mono px-1.5 py-0.5 rounded"
+                style={{ color: pColor, backgroundColor: `${pColor}12`, border: `1px solid ${pColor}30` }}>
+                {pLabel}
+              </span>
+            );
+          })}
+          {workerAgents.length > 0 && (
+            <span className="text-xs font-mono text-slate-700">{workerAgents.length}/3</span>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5">
+          <button onClick={handleLike} title="Like this output"
+            className="px-2 py-1 text-xs rounded border transition-all"
+            style={{
+              borderColor: liked ? "#22c55e" : "#1e293b",
+              color: liked ? "#22c55e" : "#475569",
+              backgroundColor: liked ? "rgba(34,197,94,0.1)" : "transparent",
+              boxShadow: liked ? "0 0 8px rgba(34,197,94,0.2)" : "none",
+            }}>
+            👍
+          </button>
+
+          <div className="relative">
+            <button onClick={handleDislike} title="Dislike this output"
+              className="px-2 py-1 text-xs rounded border transition-all"
+              style={{
+                borderColor: disliked ? "#ef4444" : "#1e293b",
+                color: disliked ? "#ef4444" : "#475569",
+                backgroundColor: disliked ? "rgba(239,68,68,0.1)" : "transparent",
+                boxShadow: disliked ? "0 0 8px rgba(239,68,68,0.2)" : "none",
+              }}>
+              👎
+            </button>
+            {showDislikeMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowDislikeMenu(false)} />
+                <div className="absolute right-0 top-8 z-20 rounded-lg border border-slate-800 bg-slate-950 shadow-xl p-2 w-36">
+                  <div className="text-xs text-slate-600 mb-1.5 font-mono uppercase tracking-wider px-1">Reason</div>
+                  {DISLIKE_REASONS.map((r) => (
+                    <button key={r} onClick={() => setShowDislikeMenu(false)}
+                      className="block w-full text-left px-2 py-1 text-xs font-mono rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors">
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <button onClick={handleCopy} title="Copy current tab"
+            className="px-2 py-1 text-xs font-mono rounded border transition-all"
+            style={{
+              borderColor: copied ? "#06b6d4" : "#1e293b",
+              color: copied ? "#06b6d4" : "#475569",
+              backgroundColor: copied ? "rgba(6,182,212,0.08)" : "transparent",
+            }}>
+            {copied ? "✓" : "📋"}
+          </button>
+
+          <button onClick={handleDownload} title="Download as markdown"
+            className="px-2 py-1 text-xs rounded border border-slate-800 text-slate-400 hover:border-cyan-700 hover:text-cyan-400 transition-colors">
+            ⬇
+          </button>
+
+          {onRunAgain && (
+            <button onClick={onRunAgain} disabled={loading} title="Run again"
+              className="px-2 py-1 text-xs font-mono rounded border transition-all disabled:opacity-40"
+              style={{ borderColor: "#7c3aed", color: "#a78bfa", backgroundColor: "rgba(124,58,237,0.07)" }}>
+              ↻
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Landing headline */}
-      <div className="mb-5 p-4 rounded-xl border bg-gradient-to-r from-slate-950 to-black"
+      <div className="mb-4 p-4 rounded-xl border bg-gradient-to-r from-slate-950 to-black"
         style={{ borderColor: `${runColor}30` }}>
         <div className="card-heading mb-2">Landing headline — Run {result.runNumber}</div>
         <div className="prose-demo font-semibold text-lg leading-snug" style={{ color: runColor }}>{result.output.landingHeadline}</div>
       </div>
 
+      {/* Tab row */}
       <div className="flex gap-2 mb-4">
         {(["pitch", "positioning", "risks"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
@@ -580,13 +742,8 @@ function OutputPanel({ result }: { result: MissionResult }) {
             {t}
           </button>
         ))}
-        {tab === "pitch" && (
-          <button onClick={copyPitch}
-            className="ml-auto px-3 py-1.5 text-xs font-mono rounded-lg border border-slate-700 text-slate-400 hover:border-green-600 hover:text-green-400 transition-colors">
-            {copied ? "✓ copied" : "copy"}
-          </button>
-        )}
       </div>
+
       <div className="overflow-y-auto pr-1" style={{ maxHeight: "480px" }}>
         {tab === "pitch" && <PitchSegment text={result.output.pitch} />}
         {tab === "positioning" && (
@@ -1872,10 +2029,7 @@ export default function DemoPage() {
 
             {displayResult && (
               <div className="terminal-card p-4" ref={outputRef}>
-                <div className="card-heading mb-3">
-                  📋 Final Output — Run #{displayResult.runNumber}
-                </div>
-                <OutputPanel result={displayResult} />
+                <OutputPanel result={displayResult} onRunAgain={runDemo} loading={loading} />
               </div>
             )}
 
