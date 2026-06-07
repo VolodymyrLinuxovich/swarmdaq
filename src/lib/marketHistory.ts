@@ -1,7 +1,7 @@
 /**
  * Redis market memory layer.
  *
- * Redis structures used:
+ * Redis structures:
  *   swarmdaq:missions:index         SORTED SET  — missions scored by createdAt timestamp
  *   swarmdaq:mission:{id}           STRING      — full MissionResult JSON (TTL 7d)
  *   swarmdaq:events:{id}            LIST        — append-only mission event log
@@ -12,7 +12,8 @@
  *   swarmdaq:tdigest:*              TDIGEST/LIST — percentile market intelligence
  */
 
-import { redis, KEY } from "./redis";
+import { safeRedis, isRedisEnabled } from "./redis/client";
+import { KEY } from "./redis";
 import type { MissionResult, Agent } from "./types";
 import { addTDigestValue } from "./tdigest";
 import { updateAgentLeaderboards } from "./redis/reputation";
@@ -78,93 +79,85 @@ export interface MarketMemorySummary {
 // ── In-memory fallback ────────────────────────────────────────────────────────
 
 const inMemMissions: Map<string, MissionResult> = new Map();
-const inMemMissionOrder: string[] = [];   // insertion order
+const inMemMissionOrder: string[] = [];
 const inMemEvents: Map<string, MissionEvent[]> = new Map();
 const inMemFeed: MarketFeedEvent[] = [];
 const inMemAgentHistory: Map<string, AgentHistoryEntry[]> = new Map();
 
-// ── Mission events (Redis List per mission) ───────────────────────────────────
+// ── Mission events ────────────────────────────────────────────────────────────
 
 export async function appendMissionEvent(event: MissionEvent): Promise<void> {
   const str = JSON.stringify(event);
-  if (redis) {
-    try {
-      await redis.lpush(KEY.missionEvents(event.missionId), str);
-      await redis.expire(KEY.missionEvents(event.missionId), 86400 * 7);
-      return;
-    } catch (e) { console.error("[redis] appendMissionEvent:", e); }
-  }
+  const stored = await safeRedis("appendMissionEvent", async (client) => {
+    await client.lPush(KEY.missionEvents(event.missionId), str);
+    await client.expire(KEY.missionEvents(event.missionId), 86400 * 7);
+    return true;
+  }, false);
+  if (stored) return;
   const list = inMemEvents.get(event.missionId) ?? [];
   list.unshift(event);
   inMemEvents.set(event.missionId, list);
 }
 
 export async function getMissionEvents(missionId: string): Promise<MissionEvent[]> {
-  if (redis) {
-    try {
-      const raw = await redis.lrange(KEY.missionEvents(missionId), 0, -1);
-      const events = raw.map((r) => (typeof r === "string" ? JSON.parse(r) : r) as MissionEvent);
-      return events.reverse(); // chronological order
-    } catch (e) { console.error("[redis] getMissionEvents:", e); }
-  }
-  return [...(inMemEvents.get(missionId) ?? [])].reverse();
+  const fromRedis = await safeRedis<MissionEvent[] | null>("getMissionEvents", async (client) => {
+    const raw = await client.lRange(KEY.missionEvents(missionId), 0, -1);
+    return raw.map((r) => JSON.parse(r) as MissionEvent).reverse();
+  }, null);
+  return fromRedis ?? [...(inMemEvents.get(missionId) ?? [])].reverse();
 }
 
-// ── Market feed (Redis List, capped at 100) ───────────────────────────────────
+// ── Market feed ───────────────────────────────────────────────────────────────
 
 export async function appendMarketFeed(event: MarketFeedEvent): Promise<void> {
   const str = JSON.stringify(event);
-  if (redis) {
-    try {
-      await redis.lpush(KEY.marketFeed, str);
-      await redis.ltrim(KEY.marketFeed, 0, 99);
-      return;
-    } catch (e) { console.error("[redis] appendMarketFeed:", e); }
-  }
+  const stored = await safeRedis("appendMarketFeed", async (client) => {
+    await client.lPush(KEY.marketFeed, str);
+    await client.lTrim(KEY.marketFeed, 0, 99);
+    return true;
+  }, false);
+  if (stored) return;
   inMemFeed.unshift(event);
   if (inMemFeed.length > 100) inMemFeed.pop();
 }
 
 export async function getMarketFeed(limit = 20): Promise<MarketFeedEvent[]> {
-  if (redis) {
-    try {
-      const raw = await redis.lrange(KEY.marketFeed, 0, limit - 1);
-      return raw.map((r) => (typeof r === "string" ? JSON.parse(r) : r) as MarketFeedEvent);
-    } catch (e) { console.error("[redis] getMarketFeed:", e); }
-  }
-  return inMemFeed.slice(0, limit);
+  const fromRedis = await safeRedis<MarketFeedEvent[] | null>("getMarketFeed", async (client) => {
+    const raw = await client.lRange(KEY.marketFeed, 0, limit - 1);
+    return raw.map((r) => JSON.parse(r) as MarketFeedEvent);
+  }, null);
+  return fromRedis ?? inMemFeed.slice(0, limit);
 }
 
-// ── Full mission storage (sorted set index + JSON value) ─────────────────────
+// ── Full mission storage ──────────────────────────────────────────────────────
 
 export async function storeMission(result: MissionResult): Promise<void> {
   const now = Date.now();
   const json = JSON.stringify(result);
 
-  if (redis) {
-    try {
-      await Promise.all([
-        redis.set(KEY.mission(result.missionId), json, { ex: 86400 * 7 }),
-        redis.zadd(KEY.missionsIndex, { score: now, member: result.missionId }),
-        // keep index to 50 entries
-        redis.zremrangebyrank(KEY.missionsIndex, 0, -51),
-      ]);
+  const stored = await safeRedis("storeMission", async (client) => {
+    await Promise.all([
+      client.set(KEY.mission(result.missionId), json, { EX: 86400 * 7 }),
+      client.zAdd(KEY.missionsIndex, { score: now, value: result.missionId }),
+      client.zRemRangeByRank(KEY.missionsIndex, 0, -51),
+    ]);
 
-      // Fire-and-forget t-digest analytics — never blocks or throws
-      const s = result.evalScore;
-      void Promise.all([
-        addTDigestValue(KEY.tdScoreOverall, s.overall),
-        addTDigestValue(KEY.tdScoreDimension("quality"), s.quality),
-        addTDigestValue(KEY.tdScoreDimension("factuality"), s.factuality),
-        addTDigestValue(KEY.tdScoreDimension("usefulness"), s.usefulness),
-        addTDigestValue(KEY.tdScoreDimension("specificity"), s.specificity),
-        addTDigestValue(KEY.tdScoreDimension("actionability"), s.actionability),
-        addTDigestValue(KEY.tdScoreDimension("collaboration"), s.collaboration),
-      ]).catch(() => {});
+    // Fire-and-forget t-digest analytics
+    const s = result.evalScore;
+    void Promise.all([
+      addTDigestValue(KEY.tdScoreOverall, s.overall),
+      addTDigestValue(KEY.tdScoreDimension("quality"), s.quality),
+      addTDigestValue(KEY.tdScoreDimension("factuality"), s.factuality),
+      addTDigestValue(KEY.tdScoreDimension("usefulness"), s.usefulness),
+      addTDigestValue(KEY.tdScoreDimension("specificity"), s.specificity),
+      addTDigestValue(KEY.tdScoreDimension("actionability"), s.actionability),
+      addTDigestValue(KEY.tdScoreDimension("collaboration"), s.collaboration),
+    ]).catch(() => {});
 
-      return;
-    } catch (e) { console.error("[redis] storeMission:", e); }
-  }
+    return true;
+  }, false);
+
+  if (stored) return;
   inMemMissions.set(result.missionId, result);
   inMemMissionOrder.unshift(result.missionId);
   if (inMemMissionOrder.length > 50) {
@@ -174,39 +167,35 @@ export async function storeMission(result: MissionResult): Promise<void> {
 }
 
 export async function getMissionById(missionId: string): Promise<MissionResult | null> {
-  if (redis) {
-    try {
-      const raw = await redis.get(KEY.mission(missionId));
-      if (!raw) return null;
-      return typeof raw === "string" ? JSON.parse(raw) : raw as MissionResult;
-    } catch (e) { console.error("[redis] getMissionById:", e); }
-  }
-  return inMemMissions.get(missionId) ?? null;
+  const fromRedis = await safeRedis<MissionResult | null>("getMissionById", async (client) => {
+    const raw = await client.get(KEY.mission(missionId));
+    if (!raw) return null;
+    return JSON.parse(raw) as MissionResult;
+  }, null);
+  return fromRedis ?? inMemMissions.get(missionId) ?? null;
 }
 
 export async function getRecentMissions(limit = 10): Promise<MissionSummary[]> {
-  if (redis) {
-    try {
-      // zrange with rev:true returns most-recent first
-      const ids = await redis.zrange(KEY.missionsIndex, 0, limit - 1, { rev: true }) as string[];
-      const summaries: MissionSummary[] = [];
-      for (const id of ids) {
-        const raw = await redis.get(KEY.mission(id));
-        if (!raw) continue;
-        const r = (typeof raw === "string" ? JSON.parse(raw) : raw) as MissionResult;
-        summaries.push({
-          missionId: r.missionId,
-          mission: r.mission.slice(0, 120),
-          runNumber: r.runNumber,
-          createdAt: Date.now(), // stored timestamp not in result, approximate
-          overallScore: r.evalScore.overall,
-          selectedAgents: r.selectedAgents.map((a) => a.name),
-          reputationChanges: r.reputationChanges.map((c) => ({ agentId: c.agentId, agentName: c.agentName, delta: c.delta })),
-        });
-      }
-      return summaries;
-    } catch (e) { console.error("[redis] getRecentMissions:", e); }
-  }
+  const fromRedis = await safeRedis<MissionSummary[] | null>("getRecentMissions", async (client) => {
+    const ids = await client.zRange(KEY.missionsIndex, 0, limit - 1, { REV: true });
+    const summaries: MissionSummary[] = [];
+    for (const id of ids) {
+      const raw = await client.get(KEY.mission(id));
+      if (!raw) continue;
+      const r = JSON.parse(raw) as MissionResult;
+      summaries.push({
+        missionId: r.missionId,
+        mission: r.mission.slice(0, 120),
+        runNumber: r.runNumber,
+        createdAt: Date.now(),
+        overallScore: r.evalScore.overall,
+        selectedAgents: r.selectedAgents.map((a) => a.name),
+        reputationChanges: r.reputationChanges.map((c) => ({ agentId: c.agentId, agentName: c.agentName, delta: c.delta })),
+      });
+    }
+    return summaries;
+  }, null);
+  if (fromRedis) return fromRedis;
   return inMemMissionOrder.slice(0, limit).map((id) => {
     const r = inMemMissions.get(id)!;
     return {
@@ -222,32 +211,24 @@ export async function getRecentMissions(limit = 10): Promise<MissionSummary[]> {
 }
 
 export async function getTotalMissionCount(): Promise<number> {
-  if (redis) {
-    try {
-      return await redis.zcard(KEY.missionsIndex);
-    } catch {}
-  }
-  return inMemMissions.size;
+  const count = await safeRedis("getTotalMissionCount", (client) => client.zCard(KEY.missionsIndex), null);
+  return count ?? inMemMissions.size;
 }
 
-// ── Per-agent history (Redis List) ────────────────────────────────────────────
+// ── Per-agent history ─────────────────────────────────────────────────────────
 
 export async function appendAgentHistory(agentId: string, entry: AgentHistoryEntry): Promise<void> {
   const str = JSON.stringify(entry);
-  if (redis) {
-    try {
-      await redis.lpush(KEY.agentHistory(agentId), str);
-      await redis.ltrim(KEY.agentHistory(agentId), 0, 19); // keep last 20
-
-      // Fire-and-forget t-digest analytics — never blocks or throws
-      void Promise.all([
-        addTDigestValue(KEY.tdAgentScore(agentId), entry.score),
-        addTDigestValue(KEY.tdAgentDelta(agentId), entry.delta),
-      ]).catch(() => {});
-
-      return;
-    } catch (e) { console.error("[redis] appendAgentHistory:", e); }
-  }
+  const stored = await safeRedis("appendAgentHistory", async (client) => {
+    await client.lPush(KEY.agentHistory(agentId), str);
+    await client.lTrim(KEY.agentHistory(agentId), 0, 19);
+    void Promise.all([
+      addTDigestValue(KEY.tdAgentScore(agentId), entry.score),
+      addTDigestValue(KEY.tdAgentDelta(agentId), entry.delta),
+    ]).catch(() => {});
+    return true;
+  }, false);
+  if (stored) return;
   const list = inMemAgentHistory.get(agentId) ?? [];
   list.unshift(entry);
   if (list.length > 20) list.pop();
@@ -255,16 +236,14 @@ export async function appendAgentHistory(agentId: string, entry: AgentHistoryEnt
 }
 
 export async function getAgentHistory(agentId: string, limit = 10): Promise<AgentHistoryEntry[]> {
-  if (redis) {
-    try {
-      const raw = await redis.lrange(KEY.agentHistory(agentId), 0, limit - 1);
-      return raw.map((r) => (typeof r === "string" ? JSON.parse(r) : r) as AgentHistoryEntry);
-    } catch (e) { console.error("[redis] getAgentHistory:", e); }
-  }
-  return (inMemAgentHistory.get(agentId) ?? []).slice(0, limit);
+  const fromRedis = await safeRedis<AgentHistoryEntry[] | null>("getAgentHistory", async (client) => {
+    const raw = await client.lRange(KEY.agentHistory(agentId), 0, limit - 1);
+    return raw.map((r) => JSON.parse(r) as AgentHistoryEntry);
+  }, null);
+  return fromRedis ?? (inMemAgentHistory.get(agentId) ?? []).slice(0, limit);
 }
 
-// ── Leaderboard management ─────────────────────────────────────────────────────
+// ── Leaderboard ───────────────────────────────────────────────────────────────
 
 export async function updateLeaderboards(agent: Agent): Promise<void> {
   await updateAgentLeaderboards(agent);
@@ -273,7 +252,7 @@ export async function updateLeaderboards(agent: Agent): Promise<void> {
 // ── Market memory summary ─────────────────────────────────────────────────────
 
 export async function getMarketMemorySummary(agents: Agent[]): Promise<MarketMemorySummary> {
-  const mode = isRedisAvailable() ? "redis" : "in-memory";
+  const mode = isRedisEnabled() ? "redis" : "in-memory";
   const totalMissions = await getTotalMissionCount();
   const recentMissions = await getRecentMissions(1);
   const lastMissionId = recentMissions[0]?.missionId ?? null;
@@ -285,7 +264,6 @@ export async function getMarketMemorySummary(agents: Agent[]): Promise<MarketMem
   const riskiestAgent = riskiest ? { id: riskiest.id, name: riskiest.name, uncertainty: riskiest.uncertainty } : null;
 
   const labelColors: Record<string, string> = { BUY: "#00ff88", HOLD: "#fbbf24", SELL: "#ef4444", WATCH: "#00aaff" };
-
   const leaderboard = sorted.map((a) => {
     let label = "HOLD";
     if (a.uncertainty > 0.12) label = "WATCH";
@@ -297,11 +275,7 @@ export async function getMarketMemorySummary(agents: Agent[]): Promise<MarketMem
   return { mode, totalMissions, lastMissionId, topAgent, riskiestAgent, recentEvents, leaderboard };
 }
 
-function isRedisAvailable(): boolean {
-  return redis !== null;
-}
-
-// ── Run comparison ─────────────────────────────────────────────────────────────
+// ── Run comparison ────────────────────────────────────────────────────────────
 
 export async function getRunComparison(runA: number, runB: number): Promise<{
   runA: MissionResult | null;
@@ -322,69 +296,66 @@ export async function getRunComparison(runA: number, runB: number): Promise<{
   if (!mA || !mB) return null;
 
   const delta = {
-    overall:       mB.evalScore.overall       - mA.evalScore.overall,
-    quality:       mB.evalScore.quality       - mA.evalScore.quality,
-    factuality:    mB.evalScore.factuality     - mA.evalScore.factuality,
-    usefulness:    mB.evalScore.usefulness     - mA.evalScore.usefulness,
-    actionability: mB.evalScore.actionability  - mA.evalScore.actionability,
-    cost:          (mB.runCost?.totalUSD ?? 0) - (mA.runCost?.totalUSD ?? 0),
+    overall:        mB.evalScore.overall       - mA.evalScore.overall,
+    quality:        mB.evalScore.quality       - mA.evalScore.quality,
+    factuality:     mB.evalScore.factuality    - mA.evalScore.factuality,
+    usefulness:     mB.evalScore.usefulness    - mA.evalScore.usefulness,
+    actionability:  mB.evalScore.actionability - mA.evalScore.actionability,
+    cost:           (mB.runCost?.totalUSD ?? 0) - (mA.runCost?.totalUSD ?? 0),
     swarmObjective: mB.swarmPortfolio.objective - mA.swarmPortfolio.objective,
   };
 
   const swarmChanged = mB.selectedAgents.map((a) => a.id).sort().join(",") !== mA.selectedAgents.map((a) => a.id).sort().join(",");
-  const dominantGain = Object.entries(delta).filter(([k]) => k !== "cost" && k !== "swarmObjective").sort(([, a], [, b]) => Math.abs(b as number) - Math.abs(a as number))[0];
+  const dominantGain = Object.entries(delta)
+    .filter(([k]) => k !== "cost" && k !== "swarmObjective")
+    .sort(([, a], [, b]) => Math.abs(b as number) - Math.abs(a as number))[0];
+
   const explanation = [
     `Run ${runA} scored ${mA.evalScore.overall}, run ${runB} scored ${mB.evalScore.overall} (${delta.overall > 0 ? "+" : ""}${delta.overall} pts).`,
-    dominantGain ? `Biggest shift: ${dominantGain[0]} ${delta[dominantGain[0] as keyof typeof delta] > 0 ? "+" : ""}${delta[dominantGain[0] as keyof typeof delta]}.` : "",
-    swarmChanged ? `Swarm composition changed: run ${runA} used ${mA.selectedAgents.map((a) => a.name).join(", ")}; run ${runB} used ${mB.selectedAgents.map((a) => a.name).join(", ")}.` : "Same swarm composition.",
+    dominantGain ? `Biggest shift: ${dominantGain[0]} ${(delta[dominantGain[0] as keyof typeof delta] as number) > 0 ? "+" : ""}${delta[dominantGain[0] as keyof typeof delta]}.` : "",
+    swarmChanged
+      ? `Swarm composition changed: run ${runA} used ${mA.selectedAgents.map((a) => a.name).join(", ")}; run ${runB} used ${mB.selectedAgents.map((a) => a.name).join(", ")}.`
+      : "Same swarm composition.",
     mB.improvementFromPrevious?.message ?? "",
   ].filter(Boolean).join(" ");
 
   return { runA: mA, runB: mB, delta, explanation };
 }
 
-// ── Redis clear (add mission artifacts to reset) ──────────────────────────────
+// ── Redis clear ───────────────────────────────────────────────────────────────
 
 export async function clearMarketHistory(): Promise<void> {
   clearInMemoryStreams();
   clearInMemoryAnomalies();
   resetLocalTDigestFallback();
-  if (!redis) {
+
+  const clearedRedis = await safeRedis("clearMarketHistory", async (client) => {
+    const missionIds = await client.zRange(KEY.missionsIndex, 0, -1);
+    const taskTypes = ["market_research", "positioning", "landing_page_copy", "pitch_script", "risk_review", "final_eval"];
+    const keysToDelete = [
+      KEY.missionsIndex, KEY.marketFeed,
+      KEY.lbReputation, KEY.lbBayesian, KEY.lbElo, KEY.lbUncertainty,
+      KEY.agentLeaderboardFactuality, KEY.agentLeaderboardMarketValue,
+      KEY.streamMarketEvents, KEY.streamEvaluations,
+      KEY.anomaliesIndex, KEY.tdigestPriceGlobal,
+      KEY.tdigestLatencyGlobal, KEY.tdigestScoreDeltaGlobal,
+      KEY.tdigestCostQualityGlobal, KEY.tdigestProbe,
+      ...missionIds.flatMap((id) => [KEY.mission(id), KEY.missionEvents(id)]),
+      ...taskTypes.flatMap((t) => [KEY.tdigestPriceTask(t), KEY.tdigestBidPriceTask(t)]),
+    ];
+    if (keysToDelete.length > 0) await client.del(keysToDelete);
+    return true;
+  }, false);
+
+  if (!clearedRedis) {
     inMemMissions.clear();
     inMemMissionOrder.length = 0;
     inMemEvents.clear();
     inMemFeed.length = 0;
     inMemAgentHistory.clear();
-    return;
   }
-  try {
-    const missionIds = await redis.zrange(KEY.missionsIndex, 0, -1) as string[];
-    const taskTypes = ["market_research", "positioning", "landing_page_copy", "pitch_script", "risk_review", "final_eval"];
-    const keysToDelete = [
-      KEY.missionsIndex,
-      KEY.marketFeed,
-      KEY.lbReputation,
-      KEY.lbBayesian,
-      KEY.lbElo,
-      KEY.lbUncertainty,
-      KEY.agentLeaderboardFactuality,
-      KEY.agentLeaderboardMarketValue,
-      KEY.streamMarketEvents,
-      KEY.streamEvaluations,
-      KEY.anomaliesIndex,
-      KEY.tdigestPriceGlobal,
-      KEY.tdigestLatencyGlobal,
-      KEY.tdigestScoreDeltaGlobal,
-      KEY.tdigestCostQualityGlobal,
-      KEY.tdScoreOverall,
-      ...taskTypes.flatMap((taskType) => [
-        KEY.tdigestPriceTask(taskType),
-        KEY.tdigestBidPriceTask(taskType),
-      ]),
-      ...missionIds.map((id) => KEY.mission(id)),
-      ...missionIds.map((id) => KEY.missionEvents(id)),
-      ...Array.from({ length: 20 }, (_, i) => KEY.anomaly(`run-${i + 1}`)),
-    ];
-    if (keysToDelete.length > 0) await redis.del(...keysToDelete);
-  } catch (e) { console.error("[redis] clearMarketHistory:", e); }
+}
+
+export function isRedisConnected(): boolean {
+  return isRedisEnabled();
 }

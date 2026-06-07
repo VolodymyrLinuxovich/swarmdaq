@@ -110,6 +110,7 @@ const TASK_AGENT_AFFINITY: Record<string, string[]> = {
 function toPriceAnomalyInsight(anomaly: Awaited<ReturnType<typeof computePriceAnomaly>>): PriceAnomalyInsight {
   return {
     label: anomaly.label,
+    severity: anomaly.severity,
     percentile: anomaly.percentile,
     pValue: anomaly.pValue,
     anomalyScore: anomaly.anomalyScore,
@@ -118,6 +119,7 @@ function toPriceAnomalyInsight(anomaly: Awaited<ReturnType<typeof computePriceAn
     historicalP90: anomaly.historicalP90,
     historicalP95: anomaly.historicalP95,
     historicalP99: anomaly.historicalP99,
+    explanationShort: anomaly.explanationShort,
   };
 }
 

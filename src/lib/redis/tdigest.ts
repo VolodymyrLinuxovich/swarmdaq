@@ -220,3 +220,60 @@ export function resetLocalTDigestFallback(): void {
   supportState = "unknown";
   supportReason = null;
 }
+
+// ── Named domain helpers ───────────────────────────────────────────────────
+
+export type TDigestFallbackMode = "native" | "redis-list" | "local-memory" | "disabled";
+
+export async function getTDigestFallbackMode(): Promise<TDigestFallbackMode> {
+  if (!isRedisEnabled()) return "disabled";
+  const supported = await ensureTDigestSupport();
+  return supported ? "native" : "redis-list";
+}
+
+export async function ensureTDigest(key: string, compression = DEFAULT_COMPRESSION): Promise<void> {
+  await ensureSketch(key, compression);
+}
+
+export async function recordBidPrice(taskType: string, price: number): Promise<void> {
+  await addTDigestValue(KEY.tdigestBidPriceTask(taskType), price);
+}
+
+export async function recordClearingPrice(taskType: string, price: number): Promise<void> {
+  await Promise.all([
+    addTDigestValue(KEY.tdigestPriceTask(taskType), price),
+    addTDigestValue(KEY.tdigestPriceGlobal, price),
+  ]);
+}
+
+export async function recordLatency(ms: number): Promise<void> {
+  await addTDigestValue(KEY.tdigestLatencyGlobal, ms);
+}
+
+export async function recordScoreDelta(delta: number): Promise<void> {
+  await addTDigestValue(KEY.tdigestScoreDeltaGlobal, delta);
+}
+
+export async function recordCostQuality(costPerQualityPoint: number): Promise<void> {
+  await addTDigestValue(KEY.tdigestCostQualityGlobal, costPerQualityPoint);
+}
+
+export async function getQuantiles(
+  key: string,
+): Promise<{ p50: number | null; p90: number | null; p95: number | null; p99: number | null }> {
+  const result = await getTDigestQuantiles(key, [0.5, 0.9, 0.95, 0.99]);
+  return {
+    p50: result?.[0] ?? null,
+    p90: result?.[1] ?? null,
+    p95: result?.[2] ?? null,
+    p99: result?.[3] ?? null,
+  };
+}
+
+export async function estimateCDF(key: string, value: number): Promise<number | null> {
+  return getTDigestCDF(key, value);
+}
+
+export async function getDigestInfo(key: string): Promise<{ sampleSize: number | null }> {
+  return getTDigestInfo(key);
+}

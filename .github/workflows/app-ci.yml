@@ -1,0 +1,38 @@
+name: App CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+        env:
+          # Redis and Mem0 are optional — app builds cleanly without them
+          SWARMDAQ_MODE: FALLBACK
+
+      - name: Test
+        run: npm test

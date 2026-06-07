@@ -701,11 +701,11 @@ function MarketIntelligencePanel({ intelligence }: { intelligence: MarketIntelli
         </div>
       </div>
 
-      {intelligence?.topAgents.length ? (
+      {intelligence?.topAgentsByReputation.length ? (
         <div className="mb-3">
           <div className="text-xs text-slate-700 uppercase tracking-wider mb-1">Redis Leaderboard Snapshot</div>
           <div className="space-y-1">
-            {intelligence.topAgents.slice(0, 3).map((agent, i) => (
+            {intelligence.topAgentsByReputation.slice(0, 3).map((agent, i) => (
               <div key={agent.id} className="flex items-center gap-2 text-xs font-mono">
                 <span className="text-slate-700 w-4">{i + 1}</span>
                 <span className="flex-1 text-slate-500 truncate">{agent.name}</span>

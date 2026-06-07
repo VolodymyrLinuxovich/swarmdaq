@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyPricePattern,
+  classifySeverity,
   computePValueFromCDF,
   priceAnomalyRankingSignal,
   type PriceAnomalyResult,
@@ -10,6 +11,7 @@ import type { Agent } from "../types";
 function anomaly(overrides: Partial<PriceAnomalyResult>): PriceAnomalyResult {
   return {
     label: "NORMAL_PRICE",
+    severity: "NORMAL",
     percentile: 50,
     pValue: 0.5,
     anomalyScore: 0.5,
@@ -19,6 +21,7 @@ function anomaly(overrides: Partial<PriceAnomalyResult>): PriceAnomalyResult {
     historicalP95: 0.09,
     historicalP99: 0.1,
     cdf: 0.5,
+    explanationShort: "Price is within normal historical range.",
     ...overrides,
   };
 }
@@ -52,6 +55,23 @@ function agent(overrides: Partial<Agent> = {}): Agent {
 }
 
 describe("p-value price anomaly math", () => {
+  it("classifySeverity: p<0.01 → EXTREME_ANOMALY", () => {
+    expect(classifySeverity(0.005)).toBe("EXTREME_ANOMALY");
+  });
+
+  it("classifySeverity: p<0.05 → SIGNIFICANT_ANOMALY", () => {
+    expect(classifySeverity(0.03)).toBe("SIGNIFICANT_ANOMALY");
+  });
+
+  it("classifySeverity: p<0.10 → MILD_ANOMALY", () => {
+    expect(classifySeverity(0.07)).toBe("MILD_ANOMALY");
+  });
+
+  it("classifySeverity: p>=0.10 → NORMAL", () => {
+    expect(classifySeverity(0.15)).toBe("NORMAL");
+    expect(classifySeverity(null)).toBe("NORMAL");
+  });
+
   it("computes two-sided p-value and anomaly score from CDF", () => {
     const result = computePValueFromCDF(0.98);
     expect(result.upperTail).toBeCloseTo(0.02, 5);

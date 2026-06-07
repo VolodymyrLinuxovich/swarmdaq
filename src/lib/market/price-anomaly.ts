@@ -1,6 +1,6 @@
 import type { Agent } from "../types";
 import { clamp01 } from "../math/agentMath";
-import { KEY, redis, safeRedis } from "../redis";
+import { KEY, isRedisEnabled, safeRedis } from "../redis";
 import {
   addTDigestValue,
   getTDigestCDF,
@@ -16,8 +16,15 @@ export type PricePatternLabel =
   | "NORMAL_PRICE"
   | "INSUFFICIENT_HISTORY";
 
+export type AnomalySeverity =
+  | "EXTREME_ANOMALY"
+  | "SIGNIFICANT_ANOMALY"
+  | "MILD_ANOMALY"
+  | "NORMAL";
+
 export interface PriceAnomalyResult {
   label: PricePatternLabel;
+  severity: AnomalySeverity;
   percentile: number | null;
   pValue: number | null;
   anomalyScore: number;
@@ -27,6 +34,7 @@ export interface PriceAnomalyResult {
   historicalP95: number | null;
   historicalP99: number | null;
   cdf: number | null;
+  explanationShort: string;
 }
 
 export interface StoredMarketAnomaly extends PriceAnomalyResult {
@@ -42,6 +50,28 @@ export interface StoredMarketAnomaly extends PriceAnomalyResult {
 }
 
 const inMemoryAnomalies: StoredMarketAnomaly[] = [];
+
+export function classifySeverity(pValue: number | null): AnomalySeverity {
+  if (pValue === null) return "NORMAL";
+  if (pValue < 0.01) return "EXTREME_ANOMALY";
+  if (pValue < 0.05) return "SIGNIFICANT_ANOMALY";
+  if (pValue < 0.10) return "MILD_ANOMALY";
+  return "NORMAL";
+}
+
+function buildExplanationShort(label: PricePatternLabel, severity: AnomalySeverity, pValue: number | null, sampleSize: number): string {
+  if (label === "INSUFFICIENT_HISTORY") return `Insufficient history (n=${sampleSize}); classification deferred.`;
+  if (label === "NORMAL_PRICE") return "Price is within normal historical range.";
+  const p = pValue !== null ? `p=${pValue.toFixed(4)}` : "";
+  const sev = severity.replace(/_/g, " ").toLowerCase();
+  switch (label) {
+    case "UNDERPRICED_AGENT": return `Agent is priced below historical norm — ${sev} (${p}).`;
+    case "OVERPRICED_AGENT": return `Agent is priced above historical norm — ${sev} (${p}).`;
+    case "MARKET_SPIKE": return `Extreme upward price spike detected — ${sev} (${p}).`;
+    case "MARKET_CRASH": return `Extreme downward price collapse detected — ${sev} (${p}).`;
+    default: return "Price anomaly detected.";
+  }
+}
 
 export function computePValueFromCDF(cdf: number): {
   lowerTail: number;
@@ -101,8 +131,10 @@ export async function computePriceAnomaly(params: {
     historicalMedian,
   });
 
+  const severity = classifySeverity(pValue);
   return {
     label,
+    severity,
     percentile: cdf === null ? null : Math.round(cdf * 1000) / 10,
     pValue: pValue === null ? null : Math.round(pValue * 10000) / 10000,
     anomalyScore: p ? Math.round(p.anomalyScore * 10000) / 10000 : 0,
@@ -112,6 +144,7 @@ export async function computePriceAnomaly(params: {
     historicalP95: quantiles?.[2] ?? null,
     historicalP99: quantiles?.[3] ?? null,
     cdf,
+    explanationShort: buildExplanationShort(label, severity, pValue, sampleSize),
   };
 }
 
@@ -165,26 +198,26 @@ export async function recordEvaluationMarketMetrics(params: {
 export async function storeMarketAnomaly(anomaly: StoredMarketAnomaly): Promise<void> {
   inMemoryAnomalies.unshift(anomaly);
   if (inMemoryAnomalies.length > 100) inMemoryAnomalies.pop();
-  if (!redis) return;
+  if (!isRedisEnabled()) return;
 
   const encoded = JSON.stringify(anomaly);
   await safeRedis("storeMarketAnomaly", async (client) => {
     await Promise.all([
-      client.lpush(KEY.anomaly(anomaly.runId), encoded),
-      client.ltrim(KEY.anomaly(anomaly.runId), 0, 49),
+      client.lPush(KEY.anomaly(anomaly.runId), encoded),
+      client.lTrim(KEY.anomaly(anomaly.runId), 0, 49),
       client.expire(KEY.anomaly(anomaly.runId), 86400 * 7),
-      client.zadd(KEY.anomaliesIndex, { score: anomaly.timestamp, member: encoded }),
-      client.zremrangebyrank(KEY.anomaliesIndex, 0, -101),
+      client.zAdd(KEY.anomaliesIndex, { score: anomaly.timestamp, value: encoded }),
+      client.zRemRangeByRank(KEY.anomaliesIndex, 0, -101),
     ]);
   }, undefined);
 }
 
 export async function getRecentAnomalies(limit = 10): Promise<StoredMarketAnomaly[]> {
-  if (!redis) return inMemoryAnomalies.slice(0, limit);
+  if (!isRedisEnabled()) return inMemoryAnomalies.slice(0, limit);
   return safeRedis(
     "getRecentAnomalies",
     async (client) => {
-      const raw = await client.zrange<string[]>(KEY.anomaliesIndex, 0, limit - 1, { rev: true });
+      const raw = await client.zRange(KEY.anomaliesIndex, 0, limit - 1, { REV: true });
       return raw
         .map((item) => {
           try { return JSON.parse(item) as StoredMarketAnomaly; } catch { return null; }

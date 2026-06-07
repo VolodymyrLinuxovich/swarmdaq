@@ -91,10 +91,11 @@ cost = input * $0.075/1M + output * $0.30/1M
     title: "Redis Memory",
     color: "#dc382d",
     icon: "💾",
-    body: "Agent state persists across cold starts via Upstash Redis (HTTP REST — works in Vercel serverless, no TCP connections). Redis Hashes store agent reputation snapshots, Sorted Sets power leaderboards, Streams preserve market events, and t-digest or rolling quantiles model price/latency anomalies. Without credentials, an in-memory store provides full functionality with identical API.",
-    code: `// Upstash Redis (HTTP REST, no TCP — serverless-safe)
-import { Redis } from "@upstash/redis"
-const redis = new Redis({ url: UPSTASH_REDIS_REST_URL, token: UPSTASH_REDIS_REST_TOKEN })
+    body: "Agent state persists across runs via Redis Cloud (TCP). Redis Hashes store agent reputation snapshots, Sorted Sets power leaderboards, Streams preserve market events, and t-digest or rolling quantiles model price/latency anomalies. Mem0 stores agent memory across missions. Without credentials, an in-memory store provides full functionality with identical API.",
+    code: `// Redis Cloud (node-redis, TCP)
+import { createClient } from "redis"
+const client = createClient({ url: process.env.REDIS_URL })
+await client.connect()
 
 // Key schema
 swarmdaq:agent:{id}                         → HASH reputation snapshot

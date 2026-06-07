@@ -11,7 +11,10 @@ export type MarketEventType =
   | "evaluation_completed"
   | "reputation_updated"
   | "anomaly_detected"
-  | "run_completed";
+  | "run_completed"
+  | "redis_error"
+  | "mem0_memory_saved"
+  | "mem0_memory_retrieved";
 
 export interface RedisMarketEvent {
   id?: string;

@@ -3,9 +3,10 @@ import { getAgents } from "@/lib/memory";
 import { isRedisEnabled } from "@/lib/redis";
 import { KEY } from "@/lib/redis/keys";
 import { getRecentMarketEvents, getStreamLength } from "@/lib/redis/streams";
-import { getTDigestQuantiles, getTDigestRuntimeStatus } from "@/lib/redis/tdigest";
+import { getTDigestQuantiles, getTDigestRuntimeStatus, getTDigestFallbackMode } from "@/lib/redis/tdigest";
 import { getRecentAnomalies } from "@/lib/market/price-anomaly";
 import { getRecentMissions } from "@/lib/marketHistory";
+import { isMem0Enabled } from "@/lib/memory/mem0";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
@@ -17,20 +18,28 @@ interface PriceStats {
   p99: number;
 }
 
+interface AgentSummary {
+  id: string;
+  name: string;
+  reputation: number;
+  elo: number;
+  factuality: number;
+  marketValue: number;
+}
+
 export interface MarketIntelligenceResponse {
   redisEnabled: boolean;
+  redisProvider: "redis-cloud" | "upstash" | "none";
   tdigestEnabled: boolean;
   tdigestMode: "redis-tdigest" | "rolling-quantile" | "in-memory";
+  tdigestFallbackMode: "native" | "redis-list" | "local-memory" | "disabled";
   tdigestReason: string | null;
+  mem0Enabled: boolean;
   totalEvents: number;
-  topAgents: Array<{
-    id: string;
-    name: string;
-    reputation: number;
-    elo: number;
-    factuality: number;
-    marketValue: number;
-  }>;
+  topAgentsByReputation: AgentSummary[];
+  topAgentsByElo: AgentSummary[];
+  topAgentsByFactuality: AgentSummary[];
+  recentMarketEvents: Awaited<ReturnType<typeof getRecentMarketEvents>>;
   recentAnomalies: Awaited<ReturnType<typeof getRecentAnomalies>>;
   globalPriceStats: PriceStats | null;
   latestRunMarketSummary: {
@@ -38,7 +47,6 @@ export interface MarketIntelligenceResponse {
     runNumber: number;
     overallScore: number;
     selectedAgents: string[];
-    recentEvents: Awaited<ReturnType<typeof getRecentMarketEvents>>;
   } | null;
 }
 
@@ -53,37 +61,58 @@ function marketValue(agent: Awaited<ReturnType<typeof getAgents>>[number]): numb
   );
 }
 
-export async function GET() {
-  const [agents, tdigestStatus, totalEvents, recentAnomalies, priceQ, missions, recentEvents] = await Promise.all([
-    getAgents(),
-    getTDigestRuntimeStatus(),
-    getStreamLength(KEY.streamMarketEvents),
-    getRecentAnomalies(5),
-    getTDigestQuantiles(KEY.tdigestPriceGlobal, [0.5, 0.9, 0.95, 0.99]),
-    getRecentMissions(1),
-    getRecentMarketEvents(8),
-  ]);
+function toAgentSummary(agent: Awaited<ReturnType<typeof getAgents>>[number]): AgentSummary {
+  return {
+    id: agent.id,
+    name: agent.name,
+    reputation: agent.reputation,
+    elo: agent.elo,
+    factuality: Math.round(agent.factuality * 100),
+    marketValue: marketValue(agent),
+  };
+}
 
-  const topAgents = [...agents]
-    .sort((a, b) => b.reputation - a.reputation)
-    .slice(0, 5)
-    .map((agent) => ({
-      id: agent.id,
-      name: agent.name,
-      reputation: agent.reputation,
-      elo: agent.elo,
-      factuality: Math.round(agent.factuality * 100),
-      marketValue: marketValue(agent),
-    }));
+function redisProvider(): "upstash" | "redis-cloud" | "none" {
+  if (!isRedisEnabled()) {
+    return Boolean(process.env.REDIS_URL || (process.env.REDIS_HOST && process.env.REDIS_PASSWORD))
+      ? "redis-cloud"
+      : "none";
+  }
+  return process.env.UPSTASH_REDIS_REST_URL ? "upstash" : "redis-cloud";
+}
+
+export async function GET() {
+  const [agents, tdigestStatus, tdigestFbMode, totalEvents, recentAnomalies, priceQ, missions, recentMarketEvents] =
+    await Promise.all([
+      getAgents(),
+      getTDigestRuntimeStatus(),
+      getTDigestFallbackMode(),
+      getStreamLength(KEY.streamMarketEvents),
+      getRecentAnomalies(5),
+      getTDigestQuantiles(KEY.tdigestPriceGlobal, [0.5, 0.9, 0.95, 0.99]),
+      getRecentMissions(1),
+      getRecentMarketEvents(8),
+    ]);
+
+  const sorted = [...agents];
+  const byReputation = [...sorted].sort((a, b) => b.reputation - a.reputation).slice(0, 5).map(toAgentSummary);
+  const byElo = [...sorted].sort((a, b) => b.elo - a.elo).slice(0, 5).map(toAgentSummary);
+  const byFactuality = [...sorted].sort((a, b) => b.factuality - a.factuality).slice(0, 5).map(toAgentSummary);
 
   const latest = missions[0];
   const response: MarketIntelligenceResponse = {
     redisEnabled: isRedisEnabled(),
+    redisProvider: redisProvider(),
     tdigestEnabled: tdigestStatus.tdigestEnabled,
     tdigestMode: tdigestStatus.mode,
+    tdigestFallbackMode: tdigestFbMode,
     tdigestReason: tdigestStatus.reason,
+    mem0Enabled: isMem0Enabled(),
     totalEvents,
-    topAgents,
+    topAgentsByReputation: byReputation,
+    topAgentsByElo: byElo,
+    topAgentsByFactuality: byFactuality,
+    recentMarketEvents,
     recentAnomalies,
     globalPriceStats: priceQ
       ? {
@@ -99,7 +128,6 @@ export async function GET() {
           runNumber: latest.runNumber,
           overallScore: latest.overallScore,
           selectedAgents: latest.selectedAgents,
-          recentEvents,
         }
       : null,
   };

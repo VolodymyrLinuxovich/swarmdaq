@@ -18,7 +18,7 @@
 
 ---
 
-**Hackathon:** WeaveHacks 2026
+**Hackathon:** WeaveHacks 2025
 **Theme:** Agent performance, tracing, evaluation, and self-improving AI systems  
 **Built with:** Gemini · W&B Weave · Redis · Next.js · Vercel  
 **Live demo:** [SwarmDAQ on Vercel](https://swarmdaq.vercel.app)  
@@ -90,7 +90,7 @@ vercel --prod --yes
 | **Generative UI** | CopilotKit 1.59 |
 | **Agent execution** | Gemini via `@google/genai` |
 | **Tracing** | W&B Weave with in-memory fallback |
-| **Memory** | Redis / Upstash Redis with in-memory fallback |
+| **Memory** | Redis Cloud (node-redis TCP) + Mem0 agent memory, with in-memory fallback |
 | **Math engine** | UCB1 · Bayesian Beta reputation · Elo · auctions · portfolio optimization · PageRank-style trust |
 | **Deployment** | Vercel |
 
@@ -586,26 +586,44 @@ swarmdaq/
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── agents/           # GET agent list + custom agent CRUD
-│   │   │   ├── history/          # Mission result + event log retrieval
-│   │   │   ├── leaderboard/      # Live leaderboard endpoint
-│   │   │   ├── market-feed/      # SSE market event stream
-│   │   │   ├── mission/stream    # SSE mission execution stream
-│   │   │   ├── reset-demo/       # Reset Redis to initial state
-│   │   │   ├── copilotkit/       # CopilotKit runtime endpoint
-│   │   │   └── traces/           # W&B Weave trace retrieval
-│   │   ├── architecture/         # Architecture explainer page
-│   │   ├── benchmark/            # Benchmark comparison page
-│   │   ├── demo/                 # Main demo terminal UI
-│   │   ├── leaderboard/          # Live agent leaderboard page
-│   │   ├── results/[missionId]/  # Shareable mission results page
+│   │   │   ├── agents/               # GET agent list + custom agent CRUD
+│   │   │   ├── analytics/            # Analytics snapshot
+│   │   │   ├── copilotkit/           # CopilotKit runtime endpoint
+│   │   │   ├── history/              # Mission result + event log retrieval
+│   │   │   ├── leaderboard/          # Live leaderboard endpoint
+│   │   │   ├── market-feed/          # SSE market event stream
+│   │   │   ├── market/intelligence/  # Market intelligence + Redis/Mem0 status
+│   │   │   ├── mission/              # Mission execution + SSE stream
+│   │   │   ├── reset-demo/           # Reset Redis to initial state
+│   │   │   └── traces/               # W&B Weave trace retrieval
+│   │   ├── architecture/             # Architecture explainer page
+│   │   ├── benchmark/                # Benchmark comparison page
+│   │   ├── demo/                     # Main demo terminal UI
+│   │   ├── leaderboard/              # Live agent leaderboard page
+│   │   ├── results/[missionId]/      # Shareable mission results page
 │   │   ├── globals.css
 │   │   ├── layout.tsx
-│   │   └── page.tsx              # Landing page
+│   │   └── page.tsx                  # Landing page
 │   ├── components/
-│   │   ├── DeliberationFeed.tsx  # Live deliberation panel
-│   │   └── SwarmCopilot.tsx      # CopilotKit generative UI sidebar
+│   │   ├── copilot/                  # CopilotKit generative UI cards
+│   │   └── SwarmCopilot.tsx          # CopilotKit sidebar
 │   └── lib/
+│       ├── __tests__/                # Vitest unit tests (74 tests)
+│       │   ├── anomaly-contextualizer.test.ts
+│       │   ├── api-intelligence.test.ts
+│       │   ├── evaluation.test.ts
+│       │   ├── market-streams.test.ts
+│       │   ├── marketmaker.test.ts
+│       │   ├── mem0.test.ts
+│       │   ├── mode.test.ts
+│       │   ├── price-anomaly.test.ts
+│       │   ├── redis-client.test.ts
+│       │   ├── reputation.test.ts
+│       │   └── tdigest.test.ts
+│       ├── market/
+│       │   ├── anomaly-contextualizer.ts  # LLM anomaly explanation + fallback
+│       │   ├── price-anomaly.ts           # p-value, severity, t-digest integration
+│       │   └── scoring.ts                 # MarketMaker composite scoring
 │       ├── math/
 │       │   ├── agentMath.ts      # normalize, clamp01, weightedSum
 │       │   ├── auction.ts        # Vickrey-inspired utility bidding
@@ -614,27 +632,36 @@ swarmdaq/
 │       │   ├── graphTrust.ts     # PageRank-style trust graph
 │       │   ├── portfolio.ts      # Markowitz-style swarm optimization
 │       │   └── reputation.ts     # Bayesian Beta + Elo updates
-│       ├── __tests__/            # Vitest unit tests (43 tests)
-│       │   ├── evaluation.test.ts
-│       │   ├── marketmaker.test.ts
-│       │   ├── mode.test.ts
-│       │   └── reputation.test.ts
+│       ├── memory/
+│       │   └── mem0.ts           # Mem0 agent memory (save/search, fallback when key missing)
+│       ├── redis/
+│       │   ├── client.ts         # Upstash Redis client, getRedisClient, safeRedis, rawRedisCommand, closeRedisClient
+│       │   ├── index.ts          # Barrel: all redis helpers re-exported
+│       │   ├── keys.ts           # Canonical KEY schema (swarmdaq:*)
+│       │   ├── reputation.ts     # Agent hash reads/writes + leaderboard updates
+│       │   ├── streams.ts        # Redis Streams: XADD, XREVRANGE, in-memory fallback
+│       │   └── tdigest.ts        # T-Digest: native + redis-list + local-memory fallback
+│       ├── redis.ts              # Canonical entrypoint → re-exports src/lib/redis/index
+│       ├── tdigest.ts            # Backward-compat re-export of redis/tdigest
 │       ├── agents.ts
 │       ├── evaluation.ts         # LLM eval → content rubric fallback
 │       ├── gemini.ts
 │       ├── marketHistory.ts      # Mission event log
-│       ├── memory.ts
+│       ├── memory.ts             # In-memory agent store (Redis-backed)
+│       ├── messages.ts
 │       ├── mode.ts               # ExecMode: LIVE | SEEDED_DEMO | FALLBACK
 │       ├── orchestrator.ts       # Core mission + market loop
+│       ├── providers.ts
+│       ├── providers-config.ts
 │       ├── trace.ts
 │       └── types.ts
+├── paper/                        # Research paper (LaTeX)
 ├── pitchdeck/
-│   ├── slides.html              # HTML pitch deck source
-│   └── generate.py              # Optional PPTX export
+│   ├── slides.html               # HTML pitch deck source
+│   └── generate.py               # Optional PPTX export
 ├── public/pitchdeck/
-│   └── index.html               # Deployed deck at /pitchdeck
+│   └── index.html                # Deployed deck at /pitchdeck
 ├── vitest.config.ts
-├── .env.example
 ├── next.config.ts
 ├── package.json
 └── README.md
@@ -677,23 +704,112 @@ http://localhost:3000
 Create `.env.local` in the project root.
 
 ```env
+# Gemini — required for LIVE mode
 GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_key_here
 GEMINI_API_KEY=your_gemini_key_here
 
+# W&B Weave — optional, in-memory fallback if missing
 WANDB_API_KEY=your_wandb_key_here
 WANDB_PROJECT=swarmdaq
 WANDB_ENTITY=your_wandb_entity_optional
 
-REDIS_URL=your_redis_url_optional
+# Redis — Upstash REST client (primary)
+UPSTASH_REDIS_REST_URL=https://your-upstash-url.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your_upstash_token
+
+# Redis — Redis Cloud / native (alternative)
+REDIS_URL=redis://:password@host:port
+# REDIS_HOST=redis-xxxxx.cloud.redislabs.com
+# REDIS_PASSWORD=your_password
+# REDIS_PORT=6379
+
+# Mem0 — optional, agent memory disabled if missing
+MEM0_API_KEY=your_mem0_api_key
 
 # Optional: force execution mode (LIVE | SEEDED_DEMO | FALLBACK)
 # Default: LIVE if an API key is present, FALLBACK if not
 SWARMDAQ_MODE=SEEDED_DEMO
 ```
 
-Never commit real API keys to GitHub. Add production secrets through Vercel environment variables.
+Never commit real API keys. Add production secrets through Vercel environment variables.
 
-The demo can run without keys through deterministic fallback behavior.
+The demo runs without keys via in-memory fallbacks. Redis Disabled and Mem0 Disabled states are shown in the dashboard.
+
+---
+
+## Redis / Mem0 Architecture
+
+SwarmDAQ uses Redis for durable market state and Mem0 for agent memory that persists across missions.
+
+**Redis Cloud (node-redis TCP)**
+
+| Data structure | Key | Purpose |
+|---|---|---|
+| Stream | `swarmdaq:stream:market-events` | All market events (bids, selections, completions) |
+| Stream | `swarmdaq:stream:evaluations` | Evaluation events with scores |
+| Sorted Set | `swarmdaq:agent:leaderboard:reputation` | Reputation leaderboard |
+| Sorted Set | `swarmdaq:agent:leaderboard:elo` | Elo leaderboard |
+| Sorted Set | `swarmdaq:agent:leaderboard:factuality` | Factuality leaderboard |
+| Hash | `swarmdaq:agent:{agentId}` | Agent state (reputation, elo, price, …) |
+| T-Digest | `swarmdaq:tdigest:price:global` | Global clearing-price distribution |
+| T-Digest | `swarmdaq:tdigest:price:task:{taskType}` | Per-task clearing-price distribution |
+| T-Digest | `swarmdaq:tdigest:bid-price:task:{taskType}` | Per-task bid-price distribution |
+| T-Digest | `swarmdaq:tdigest:latency:global` | Execution latency distribution |
+| List | `swarmdaq:anomaly:{runId}` | Stored anomaly JSON (TTL 7 days) |
+
+**Mem0 (REST API)**
+
+Each save uses `user_id: "swarmdaq"`, `agent_id: agentId`, `run_id: runId`.
+
+Memory types stored:
+- agent strengths, failures, factuality mistakes
+- price anomalies (underpriced, overpriced, spike, crash)
+- tasks where high price was justified by quality
+- evaluator explanations and judge-friendly summaries
+
+---
+
+## Live Mode vs Seeded Demo Mode
+
+| Mode | Trigger | Behavior |
+|---|---|---|
+| `LIVE` | Gemini API key present | Real LLM calls, real market, real memory |
+| `SEEDED_DEMO` | `SWARMDAQ_MODE=SEEDED_DEMO` | Deterministic outputs, reproducible demo |
+| `FALLBACK` | No Gemini key | Pattern-matched responses, no LLM calls |
+
+Redis and Mem0 work in all modes. In `SEEDED_DEMO`, market stats still accumulate in Redis.
+
+---
+
+## Redis Insight Inspection Guide
+
+After running missions with Redis enabled, use **Redis Insight** to inspect state.
+
+Connect to your Redis Cloud or Upstash instance and search for:
+
+| Key pattern | Type | What you'll see |
+|---|---|---|
+| `swarmdaq:stream:market-events` | Stream | All bid, selection, completion, anomaly events |
+| `swarmdaq:stream:evaluations` | Stream | Evaluation scores per task per agent |
+| `swarmdaq:agent:leaderboard:reputation` | Sorted Set | Agents ranked by reputation score |
+| `swarmdaq:agent:leaderboard:elo` | Sorted Set | Agents ranked by Elo rating |
+| `swarmdaq:agent:leaderboard:factuality` | Sorted Set | Agents ranked by factuality |
+| `swarmdaq:tdigest:clearing-price:global` | T-Digest | Global price distribution (p50/p90/p95/p99) |
+| `swarmdaq:anomaly:{runId}` | List | JSON anomaly records for that run |
+| `swarmdaq:agent:{agentId}` | Hash | Full agent state |
+
+**Check T-Digest status** — The `/api/market/intelligence` endpoint reports:
+
+```json
+{
+  "tdigestEnabled": true,
+  "tdigestFallbackMode": "native"
+}
+```
+
+If `tdigestFallbackMode` is `"redis-list"` or `"local-memory"`, your Redis tier does not support the T-Digest module. Anomaly percentiles still work via rolling-sample fallback.
+
+**Anomaly keys appear** when `pValue < 0.10` (price anomaly detected). Inspect them to see agent name, price, historical p50/p90/p99, and the explanation summary.
 
 ---
 

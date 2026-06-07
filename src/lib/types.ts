@@ -156,6 +156,7 @@ export interface MarketDecisionEntry {
 
 export interface PriceAnomalyInsight {
   label: "UNDERPRICED_AGENT" | "OVERPRICED_AGENT" | "MARKET_SPIKE" | "MARKET_CRASH" | "NORMAL_PRICE" | "INSUFFICIENT_HISTORY";
+  severity: "EXTREME_ANOMALY" | "SIGNIFICANT_ANOMALY" | "MILD_ANOMALY" | "NORMAL";
   percentile: number | null;
   pValue: number | null;
   anomalyScore: number;
@@ -164,6 +165,7 @@ export interface PriceAnomalyInsight {
   historicalP90: number | null;
   historicalP95: number | null;
   historicalP99: number | null;
+  explanationShort: string;
   explanation?: {
     summary: string;
     marketInterpretation: string;

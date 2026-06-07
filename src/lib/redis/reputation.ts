@@ -1,30 +1,14 @@
 import type { Agent } from "../types";
-import { redis, safeRedis } from "./client";
+import { safeRedis, isRedisEnabled, type RedisClient } from "./client";
 import { KEY } from "./keys";
 
-type HashRecord = Record<string, unknown>;
+type HashRecord = Record<string, string>;
 
 const NUMERIC_FIELDS = [
-  "price",
-  "reputation",
-  "factuality",
-  "usefulness",
-  "collaboration",
-  "latencyAvg",
-  "alpha",
-  "beta",
-  "bayesianMean",
-  "wins",
-  "losses",
-  "meanReward",
-  "uncertainty",
-  "avgLatency",
-  "avgCost",
-  "runs",
-  "elo",
-  "ucbScore",
-  "graphTrust",
-  "lastUpdated",
+  "price", "reputation", "factuality", "usefulness", "collaboration",
+  "latencyAvg", "alpha", "beta", "bayesianMean", "wins", "losses",
+  "meanReward", "uncertainty", "avgLatency", "avgCost", "runs",
+  "elo", "ucbScore", "graphTrust", "lastUpdated",
 ] as const;
 
 function parseNumber(value: unknown, fallback: number): number {
@@ -48,7 +32,6 @@ function parseSkills(value: unknown, fallback: string[]): string[] {
 }
 
 function serializeAgent(agent: Agent): Record<string, string> {
-  const lastUpdated = Date.now();
   return {
     agentId: agent.id,
     id: agent.id,
@@ -76,7 +59,7 @@ function serializeAgent(agent: Agent): Record<string, string> {
     runs: String(agent.runs),
     ucbScore: String(agent.ucbScore),
     graphTrust: String(agent.graphTrust),
-    lastUpdated: String(lastUpdated),
+    lastUpdated: String(Date.now()),
   };
 }
 
@@ -118,9 +101,7 @@ export function agentReputationSnapshot(agent: Agent): Record<string, string | n
   const hash = serializeAgent(agent);
   return Object.fromEntries(
     Object.entries(hash).filter(([key]) =>
-      key === "agentId" ||
-      key === "role" ||
-      key === "lastUpdated" ||
+      key === "agentId" || key === "role" || key === "lastUpdated" ||
       NUMERIC_FIELDS.includes(key as (typeof NUMERIC_FIELDS)[number])
     ),
   );
@@ -139,81 +120,76 @@ export function computeAgentMarketValue(agent: Agent): number {
 }
 
 export async function updateAgentLeaderboards(agent: Agent): Promise<void> {
-  if (!redis) return;
+  if (!isRedisEnabled()) return;
   await safeRedis("updateAgentLeaderboards", async (client) => {
     await Promise.all([
-      client.zadd(KEY.agentLeaderboardReputation, { score: agent.reputation, member: agent.id }),
-      client.zadd(KEY.agentLeaderboardElo, { score: agent.elo, member: agent.id }),
-      client.zadd(KEY.agentLeaderboardFactuality, { score: agent.factuality * 100, member: agent.id }),
-      client.zadd(KEY.agentLeaderboardBayesian, { score: agent.bayesianMean * 1000, member: agent.id }),
-      client.zadd(KEY.agentLeaderboardUncertainty, { score: (1 - agent.uncertainty) * 100, member: agent.id }),
-      client.zadd(KEY.agentLeaderboardMarketValue, { score: computeAgentMarketValue(agent), member: agent.id }),
+      client.zAdd(KEY.agentLeaderboardReputation, { score: agent.reputation, value: agent.id }),
+      client.zAdd(KEY.agentLeaderboardElo, { score: agent.elo, value: agent.id }),
+      client.zAdd(KEY.agentLeaderboardFactuality, { score: agent.factuality * 100, value: agent.id }),
+      client.zAdd(KEY.agentLeaderboardBayesian, { score: agent.bayesianMean * 1000, value: agent.id }),
+      client.zAdd(KEY.agentLeaderboardUncertainty, { score: (1 - agent.uncertainty) * 100, value: agent.id }),
+      client.zAdd(KEY.agentLeaderboardMarketValue, { score: computeAgentMarketValue(agent), value: agent.id }),
     ]);
   }, undefined);
 }
 
-async function writeHashWithMigration(agent: Agent): Promise<boolean> {
-  if (!redis) return false;
+async function writeHashWithMigration(agent: Agent, client: RedisClient): Promise<boolean> {
   const key = KEY.agent(agent.id);
   const hash = serializeAgent(agent);
   try {
-    await redis.hset(key, hash);
+    await client.hSet(key, hash);
   } catch (err) {
     const message = (err as Error).message ?? "";
     if (!message.toLowerCase().includes("wrongtype")) throw err;
-    await redis.del(key);
-    await redis.hset(key, hash);
+    await client.del(key);
+    await client.hSet(key, hash);
   }
-  await updateAgentLeaderboards(agent);
+  await Promise.all([
+    client.zAdd(KEY.agentLeaderboardReputation, { score: agent.reputation, value: agent.id }),
+    client.zAdd(KEY.agentLeaderboardElo, { score: agent.elo, value: agent.id }),
+    client.zAdd(KEY.agentLeaderboardFactuality, { score: agent.factuality * 100, value: agent.id }),
+    client.zAdd(KEY.agentLeaderboardBayesian, { score: agent.bayesianMean * 1000, value: agent.id }),
+    client.zAdd(KEY.agentLeaderboardUncertainty, { score: (1 - agent.uncertainty) * 100, value: agent.id }),
+    client.zAdd(KEY.agentLeaderboardMarketValue, { score: computeAgentMarketValue(agent), value: agent.id }),
+  ]);
   return true;
 }
 
 export async function writeAgentState(agent: Agent): Promise<boolean> {
-  return safeRedis("writeAgentState", () => writeHashWithMigration(agent), false);
+  return safeRedis("writeAgentState", (client) => writeHashWithMigration(agent, client), false);
 }
 
 export async function readAgentState(agentId: string, fallback?: Agent): Promise<Agent | null> {
-  if (!redis) return null;
-  const key = KEY.agent(agentId);
-
-  const fromHash = await safeRedis<Agent | null>(
-    "readAgentHash",
-    async (client) => {
-      const hash = await client.hgetall<HashRecord>(key);
-      return hash ? agentFromHash(agentId, hash, fallback) : null;
-    },
-    null,
-  );
-  if (fromHash) return fromHash;
-
-  return safeRedis<Agent | null>(
-    "readLegacyAgentJson",
-    async (client) => {
-      const legacy = await client.get<Agent>(key);
-      if (!legacy || typeof legacy !== "object") return null;
-      await writeHashWithMigration(legacy);
-      return legacy;
-    },
-    null,
-  );
+  return safeRedis<Agent | null>("readAgentState", async (client) => {
+    const key = KEY.agent(agentId);
+    const hash = await client.hGetAll(key) as HashRecord;
+    if (hash && Object.keys(hash).length > 0) {
+      return agentFromHash(agentId, hash, fallback);
+    }
+    // Legacy: try string-stored JSON
+    const legacy = await client.get(key);
+    if (!legacy) return null;
+    try {
+      const parsed = JSON.parse(legacy) as Agent;
+      await writeHashWithMigration(parsed, client);
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, null);
 }
 
 export async function deleteAgentState(agentId: string): Promise<boolean> {
-  if (!redis) return false;
-  return safeRedis(
-    "deleteAgentState",
-    async (client) => {
-      await Promise.all([
-        client.del(KEY.agent(agentId)),
-        client.zrem(KEY.agentLeaderboardReputation, agentId),
-        client.zrem(KEY.agentLeaderboardElo, agentId),
-        client.zrem(KEY.agentLeaderboardFactuality, agentId),
-        client.zrem(KEY.agentLeaderboardBayesian, agentId),
-        client.zrem(KEY.agentLeaderboardUncertainty, agentId),
-        client.zrem(KEY.agentLeaderboardMarketValue, agentId),
-      ]);
-      return true;
-    },
-    false,
-  );
+  return safeRedis("deleteAgentState", async (client) => {
+    await Promise.all([
+      client.del(KEY.agent(agentId)),
+      client.zRem(KEY.agentLeaderboardReputation, agentId),
+      client.zRem(KEY.agentLeaderboardElo, agentId),
+      client.zRem(KEY.agentLeaderboardFactuality, agentId),
+      client.zRem(KEY.agentLeaderboardBayesian, agentId),
+      client.zRem(KEY.agentLeaderboardUncertainty, agentId),
+      client.zRem(KEY.agentLeaderboardMarketValue, agentId),
+    ]);
+    return true;
+  }, false);
 }

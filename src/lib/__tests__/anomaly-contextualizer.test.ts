@@ -43,6 +43,7 @@ describe("anomaly contextualizer", () => {
       taskComplexity: 0.8,
       anomaly: {
         label: "MARKET_SPIKE",
+        severity: "EXTREME_ANOMALY",
         percentile: 99.2,
         pValue: 0.006,
         anomalyScore: 0.994,
@@ -52,6 +53,7 @@ describe("anomaly contextualizer", () => {
         historicalP95: 0.09,
         historicalP99: 0.11,
         cdf: 0.997,
+        explanationShort: "Extreme upward price spike detected — extreme anomaly (p=0.0060).",
       },
     });
 
