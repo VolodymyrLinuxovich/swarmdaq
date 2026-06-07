@@ -1706,10 +1706,10 @@ export default function DemoPage() {
         )}
 
         {/* Main grid */}
-        <div className="flex flex-col lg:flex-row lg:items-stretch gap-5">
+        <div className="flex flex-col lg:flex-row lg:items-start gap-5">
           {/* Left: Agent cards */}
-          <div className="order-2 lg:order-none lg:w-[280px] lg:flex-shrink-0 flex flex-col">
-            <div className="terminal-card p-4 flex flex-col flex-1">
+          <div className="order-2 lg:order-none lg:w-[280px] lg:flex-shrink-0">
+            <div className="terminal-card p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs text-slate-600 uppercase tracking-wider">Agent Registry</span>
                 <button
@@ -1719,7 +1719,7 @@ export default function DemoPage() {
                   + Studio
                 </button>
               </div>
-              <div className="space-y-2.5 flex-1 overflow-y-auto">
+              <div className="space-y-2.5">
                 {liveAgents.map((agent, i) => (
                   <div key={agent.id} className="relative group">
                     <AgentCard
@@ -1923,11 +1923,10 @@ export default function DemoPage() {
                 <div className="text-slate-600 text-xs">Agents are running...</div>
               </div>
             )}
-            <div className="flex-1" />
           </div>
 
           {/* Right: trust graph + leaderboard + eval + rep + shapley */}
-          <div className="order-3 lg:order-none lg:w-[340px] lg:flex-shrink-0 flex flex-col gap-4">
+          <div className="order-3 lg:order-none lg:w-[340px] lg:flex-shrink-0 space-y-4">
             {/* Trust graph — always visible */}
             <div className="terminal-card p-4">
               <div className="text-xs text-slate-600 uppercase tracking-wider mb-2">
@@ -1999,55 +1998,53 @@ export default function DemoPage() {
             </div>
 
             {/* Market Memory panel */}
-            <div className="terminal-card p-4 flex flex-col flex-1 min-h-0">
+            <div className="terminal-card p-4">
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-xs text-slate-600 uppercase tracking-wider">🗄 Market Memory</span>
                 <span className="text-xs font-mono text-green-700 ml-1">{totalMissions > 0 ? `${totalMissions} missions` : ""}</span>
                 <button onClick={() => void fetchMarketMemory()} className="ml-auto text-xs text-slate-700 hover:text-slate-500 transition-colors">↺</button>
               </div>
-              <div className="overflow-y-auto flex-1 min-h-0">
-                {marketFeed.length === 0 && totalMissions === 0 && !displayResult && (
-                  <div className="text-xs font-mono text-slate-800">no history yet — run a mission first</div>
-                )}
-                {displayResult && marketFeed.length === 0 && (
-                  <div className="space-y-1.5 mb-3">
-                    <div className="text-xs font-mono text-green-700">● Run #{displayResult.runNumber} complete — score {displayResult.evalScore.overall}/100</div>
-                    {displayResult.reputationChanges.slice(0, 4).map((c) => (
-                      <div key={c.agentId} className="text-xs font-mono" style={{ color: c.delta > 0 ? "#00ff88" : c.delta < 0 ? "#ef4444" : "#64748b" }}>
-                        {c.delta > 0 ? "▲" : c.delta < 0 ? "▼" : "─"} {c.agentName} {c.delta > 0 ? `+${c.delta}` : c.delta} rep — {c.reason.slice(0, 55)}
-                      </div>
-                    ))}
-                    {displayResult.improvementFromPrevious && (
-                      <div className="text-xs font-mono text-slate-600 mt-1">{displayResult.improvementFromPrevious.message.slice(0, 80)}</div>
-                    )}
-                  </div>
-                )}
-                {marketFeed.length > 0 && (
-                  <div className="space-y-1.5 mb-3">
-                    {marketFeed.slice(0, 6).map((ev, i) => (
-                      <div key={i} className="text-xs font-mono leading-relaxed" style={{ color: ev.color ?? "#64748b" }}>{ev.text}</div>
-                    ))}
-                  </div>
-                )}
-                {recentMissions.length > 0 && (
-                  <div className="mt-3 border-t border-slate-900 pt-3">
-                    <div className="text-xs text-slate-700 uppercase tracking-wider mb-2">Recent Runs</div>
-                    {recentMissions.slice(0, 5).map((m) => {
-                      const color = m.overallScore >= 90 ? "#22d3ee" : m.overallScore >= 85 ? "#00ff88" : m.overallScore >= 80 ? "#fbbf24" : "#ef4444";
-                      return (
-                        <button key={m.missionId} onClick={() => void selectReplay(m.missionId)}
-                          className="w-full text-left flex items-center gap-2 py-1.5 border-b border-slate-900 last:border-0 hover:bg-slate-950/60 transition-colors px-1 rounded"
-                        >
-                          <span className="text-xs font-mono text-slate-600 w-10">#{m.runNumber}</span>
-                          <span className="text-xs font-mono flex-1 text-slate-500 truncate">{m.mission.slice(0, 45)}</span>
-                          <span className="text-xs font-mono font-bold" style={{ color }}>{m.overallScore}</span>
-                          <span className="text-slate-700 text-xs">{replayMissionId === m.missionId ? "▲" : "▼"}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {marketFeed.length === 0 && totalMissions === 0 && !displayResult && (
+                <div className="text-xs font-mono text-slate-800">no history yet — run a mission first</div>
+              )}
+              {displayResult && marketFeed.length === 0 && (
+                <div className="space-y-1.5 mb-3">
+                  <div className="text-xs font-mono text-green-700">● Run #{displayResult.runNumber} complete — score {displayResult.evalScore.overall}/100</div>
+                  {displayResult.reputationChanges.slice(0, 4).map((c) => (
+                    <div key={c.agentId} className="text-xs font-mono" style={{ color: c.delta > 0 ? "#00ff88" : c.delta < 0 ? "#ef4444" : "#64748b" }}>
+                      {c.delta > 0 ? "▲" : c.delta < 0 ? "▼" : "─"} {c.agentName} {c.delta > 0 ? `+${c.delta}` : c.delta} rep — {c.reason.slice(0, 55)}
+                    </div>
+                  ))}
+                  {displayResult.improvementFromPrevious && (
+                    <div className="text-xs font-mono text-slate-600 mt-1">{displayResult.improvementFromPrevious.message.slice(0, 80)}</div>
+                  )}
+                </div>
+              )}
+              {marketFeed.length > 0 && (
+                <div className="space-y-1.5 mb-3">
+                  {marketFeed.slice(0, 6).map((ev, i) => (
+                    <div key={i} className="text-xs font-mono leading-relaxed" style={{ color: ev.color ?? "#64748b" }}>{ev.text}</div>
+                  ))}
+                </div>
+              )}
+              {recentMissions.length > 0 && (
+                <div className="mt-3 border-t border-slate-900 pt-3">
+                  <div className="text-xs text-slate-700 uppercase tracking-wider mb-2">Recent Runs</div>
+                  {recentMissions.slice(0, 5).map((m) => {
+                    const color = m.overallScore >= 90 ? "#22d3ee" : m.overallScore >= 85 ? "#00ff88" : m.overallScore >= 80 ? "#fbbf24" : "#ef4444";
+                    return (
+                      <button key={m.missionId} onClick={() => void selectReplay(m.missionId)}
+                        className="w-full text-left flex items-center gap-2 py-1.5 border-b border-slate-900 last:border-0 hover:bg-slate-950/60 transition-colors px-1 rounded"
+                      >
+                        <span className="text-xs font-mono text-slate-600 w-10">#{m.runNumber}</span>
+                        <span className="text-xs font-mono flex-1 text-slate-500 truncate">{m.mission.slice(0, 45)}</span>
+                        <span className="text-xs font-mono font-bold" style={{ color }}>{m.overallScore}</span>
+                        <span className="text-slate-700 text-xs">{replayMissionId === m.missionId ? "▲" : "▼"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Mission Replay panel — shown when user selects a run */}
