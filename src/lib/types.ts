@@ -1,11 +1,17 @@
 export type AgentStatus =
-  | "idle"
-  | "bidding"
-  | "selected"
-  | "running"
-  | "done"
-  | "promoted"
-  | "penalized";
+  | "idle"         // legacy — mapped to "ready" in API
+  | "ready"        // available before mission
+  | "bidding"      // participating in auction
+  | "selected"     // won bid, awaiting execution
+  | "running"      // executing task
+  | "verifying"    // critic reviewing peer outputs
+  | "evaluating"   // evaluator scoring outputs
+  | "updating"     // reputation / memory update
+  | "done"         // completed work this run
+  | "promoted"     // reputation increased
+  | "penalized"    // reputation decreased
+  | "offline"      // provider API key missing
+  | "skipped";     // eligible but not selected
 
 export interface Agent {
   id: string;

@@ -47,13 +47,31 @@ body {
   animation: blink 1s step-end infinite;
 }
 
-@keyframes agent-pulse {
+@keyframes agent-pulse-green {
   0%, 100% { box-shadow: 0 0 10px rgba(0, 255, 136, 0.5); }
   50% { box-shadow: 0 0 30px rgba(0, 255, 136, 0.9), 0 0 60px rgba(0, 255, 136, 0.3); }
 }
-.agent-running {
-  animation: agent-pulse 1.5s ease-in-out infinite;
+@keyframes agent-pulse-yellow {
+  0%, 100% { box-shadow: 0 0 8px rgba(251, 191, 36, 0.4); }
+  50% { box-shadow: 0 0 22px rgba(251, 191, 36, 0.8), 0 0 44px rgba(251, 191, 36, 0.3); }
 }
+@keyframes agent-pulse-purple {
+  0%, 100% { box-shadow: 0 0 8px rgba(168, 85, 247, 0.4); }
+  50% { box-shadow: 0 0 22px rgba(168, 85, 247, 0.8), 0 0 44px rgba(168, 85, 247, 0.3); }
+}
+@keyframes agent-pulse-orange {
+  0%, 100% { box-shadow: 0 0 8px rgba(249, 115, 22, 0.4); }
+  50% { box-shadow: 0 0 22px rgba(249, 115, 22, 0.8), 0 0 44px rgba(249, 115, 22, 0.3); }
+}
+@keyframes agent-pulse-cyan {
+  0%, 100% { box-shadow: 0 0 8px rgba(6, 182, 212, 0.4); }
+  50% { box-shadow: 0 0 22px rgba(6, 182, 212, 0.8), 0 0 44px rgba(6, 182, 212, 0.3); }
+}
+.agent-running    { animation: agent-pulse-green  1.5s ease-in-out infinite; }
+.agent-bidding    { animation: agent-pulse-yellow 1.5s ease-in-out infinite; }
+.agent-verifying  { animation: agent-pulse-purple 1.5s ease-in-out infinite; }
+.agent-evaluating { animation: agent-pulse-orange 1.5s ease-in-out infinite; }
+.agent-updating   { animation: agent-pulse-cyan   1.5s ease-in-out infinite; }
 
 @keyframes ticker-scroll {
   0% { transform: translateX(0); }

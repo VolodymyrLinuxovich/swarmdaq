@@ -640,7 +640,15 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
 
   await updateAgent("planner", { status: "done" });
 
-  // Auction phase
+  // Auction phase — mark eligible workers as bidding, market_maker as running
+  emit({ type: "phase", phase: "auction" });
+  await updateAgent("market_maker", { status: "running" });
+  for (const a of agents) {
+    if (!["evaluator", "market_maker", "reputation", "planner"].includes(a.id)) {
+      await updateAgent(a.id, { status: "bidding" });
+    }
+  }
+
   const allBids: AgentBid[] = [];
   const selectedAgentIds: Set<string> = new Set();
   const selectedAgents: Agent[] = [];
@@ -675,6 +683,14 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
     await updateAgent(agent.id, { status: "selected" });
     emit({ type: "bid", taskType: task.type, winnerName: agent.name, bids: bids.slice(0, 3), decisionEntry });
   }
+
+  // Mark non-selected eligible agents as skipped; auction over
+  for (const a of agents) {
+    if (!["evaluator", "market_maker", "reputation", "planner"].includes(a.id) && !selectedAgentIds.has(a.id)) {
+      await updateAgent(a.id, { status: "skipped" });
+    }
+  }
+  await updateAgent("market_maker", { status: "done" });
 
   // Always include evaluator
   const evaluator = agents.find((a) => a.id === "evaluator")!;
@@ -737,6 +753,7 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
 
   // Deliberation — critics review outputs, flag issues, agents revise
   emit({ type: "phase", phase: "deliberating" });
+  if (selectedAgentIds.has("claude")) await updateAgent("claude", { status: "verifying" });
   const { revisedOutputs, allEntries: deliberationEntries, allRevisions } = await runDeliberation({
     outputs,
     taskAssignments,
@@ -752,9 +769,10 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
       task.output = revisedOutputs[task.type];
     }
   }
+  if (selectedAgentIds.has("claude")) await updateAgent("claude", { status: "done" });
 
   // Evaluation
-  await updateAgent("evaluator", { status: "running" });
+  await updateAgent("evaluator", { status: "evaluating" });
   await traceEvent({ type: "evaluate_output", data: { runNum } });
 
   const evalOutput = await generateAgentOutput({
@@ -797,6 +815,7 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
   // Reputation updates
   await traceEvent({ type: "update_reputation", data: { runNum } });
   emit({ type: "phase", phase: "updating" });
+  await updateAgent("reputation", { status: "updating" });
 
   const reputationChanges: ReputationChange[] = [];
 
@@ -921,6 +940,8 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
       }
     }
   }
+
+  await updateAgent("reputation", { status: "done" });
 
   // Task memory
   for (const task of tasks) {

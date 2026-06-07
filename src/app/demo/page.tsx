@@ -16,12 +16,18 @@ const DEFAULT_MISSION =
   "Route this mission through the SwarmDAQ agent market: build a demo-ready hackathon launch plan for a student AI product. Show every auction decision, agent failure, evaluator score, and reputation update. Deliver a concise final launch artifact.";
 
 const STATUS_COLOR: Record<string, string> = {
-  idle: "#475569", bidding: "#fbbf24", selected: "#00aaff",
-  running: "#00ff88", done: "#22c55e", promoted: "#00ff88", penalized: "#ef4444",
+  idle: "#475569", ready: "#00aaff",
+  bidding: "#fbbf24", selected: "#00aaff",
+  running: "#00ff88", verifying: "#a855f7", evaluating: "#f97316", updating: "#06b6d4",
+  done: "#22c55e", promoted: "#00ff88", penalized: "#ef4444",
+  offline: "#ef4444", skipped: "#334155",
 };
 const STATUS_LABEL: Record<string, string> = {
-  idle: "idle", bidding: "bidding", selected: "selected ✓",
-  running: "● running", done: "done", promoted: "▲ promoted", penalized: "▼ penalized",
+  idle: "idle", ready: "ready",
+  bidding: "⚡ bidding", selected: "selected ✓",
+  running: "● running", verifying: "◈ verifying", evaluating: "◉ evaluating", updating: "↻ updating",
+  done: "done", promoted: "▲ promoted", penalized: "▼ penalized",
+  offline: "offline", skipped: "skipped",
 };
 
 // ── Trust graph data ─────────────────────────────────────────────────────────
@@ -230,18 +236,24 @@ function AgentMarketDetail({ agent, repDelta, onClose }: { agent: Agent; repDelt
 
 function AgentCard({ agent, bid, delay = 0, isActive = false, onClick }: { agent: Agent; bid?: AgentBid; delay?: number; isActive?: boolean; onClick?: () => void }) {
   const color = STATUS_COLOR[agent.status] ?? "#475569";
-  const isRunning = agent.status === "running";
-  const isSelected = ["selected", "running", "done", "promoted", "penalized"].includes(agent.status);
+  const ANIM_CLASS: Partial<Record<string, string>> = {
+    running: "agent-running", bidding: "agent-bidding",
+    verifying: "agent-verifying", evaluating: "agent-evaluating", updating: "agent-updating",
+  };
+  const isSelected = ["selected", "running", "verifying", "evaluating", "updating", "bidding", "done", "promoted", "penalized", "ready"].includes(agent.status);
+  const isSkipped = agent.status === "skipped";
+  const isOffline = agent.status === "offline";
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.35 }}
       onClick={onClick}
-      className={`p-3 rounded border transition-all ${isRunning ? "agent-running" : ""}`}
+      className={`p-3 rounded border transition-all ${ANIM_CLASS[agent.status] ?? ""}`}
       style={{
-        borderColor: isActive ? "#00ff88" : isSelected ? `${color}60` : "#1e293b",
-        backgroundColor: isActive ? "rgba(0,255,136,0.06)" : isSelected ? `${color}08` : "#050505",
+        opacity: isSkipped ? 0.45 : 1,
+        borderColor: isActive ? "#00ff88" : isOffline ? "rgba(239,68,68,0.3)" : isSelected && !isSkipped ? `${color}60` : "#1e293b",
+        backgroundColor: isActive ? "rgba(0,255,136,0.06)" : isOffline ? "rgba(239,68,68,0.04)" : isSelected && !isSkipped ? `${color}08` : "#050505",
         boxShadow: isActive ? "0 0 12px rgba(0,255,136,0.15)" : undefined,
         cursor: onClick ? "pointer" : undefined,
       }}
@@ -1404,17 +1416,44 @@ export default function DemoPage() {
       switch (event.type) {
         case "phase":
           setPhase(event.phase as Phase);
+          if (event.phase === "auction") {
+            setLiveAgents((prev) => prev.map((a) =>
+              a.id === "market_maker" ? { ...a, status: "running" as const }
+              : !["evaluator", "reputation", "planner"].includes(a.id) ? { ...a, status: "bidding" as const }
+              : a
+            ));
+          } else if (event.phase === "deliberating") {
+            setLiveAgents((prev) => prev.map((a) =>
+              a.id === "claude" ? { ...a, status: "verifying" as const } : a
+            ));
+          } else if (event.phase === "evaluating") {
+            setLiveAgents((prev) => prev.map((a) =>
+              a.id === "evaluator" ? { ...a, status: "evaluating" as const } : a
+            ));
+          } else if (event.phase === "updating") {
+            setLiveAgents((prev) => prev.map((a) =>
+              a.id === "reputation" ? { ...a, status: "updating" as const } : a
+            ));
+          }
           break;
         case "bid":
           setStreamBids((prev) => [...prev, ...event.bids]);
           setStreamDecisionLog((prev) => [...prev, event.decisionEntry]);
           break;
-        case "swarm":
+        case "swarm": {
+          const selectedIds = new Set(event.agents.map((x) => x.id));
           setLiveAgents((prev) => prev.map((a) => {
-            const updated = event.agents.find((x) => x.id === a.id);
-            return updated ? { ...a, status: updated.status } : a;
+            if (selectedIds.has(a.id)) {
+              const updated = event.agents.find((x) => x.id === a.id);
+              return updated ? { ...a, status: updated.status } : a;
+            }
+            if (!["market_maker", "evaluator", "reputation", "planner"].includes(a.id) && a.status !== "offline") {
+              return { ...a, status: "skipped" as const };
+            }
+            return a;
           }));
           break;
+        }
         case "agent_start":
           setActiveAgent(event.agentId);
           setLiveAgents((prev) => prev.map((a) => a.id === event.agentId ? { ...a, status: "running" } : a));
@@ -1434,6 +1473,9 @@ export default function DemoPage() {
           break;
         case "deliberation_done":
           setDeliberationDone(true);
+          setLiveAgents((prev) => prev.map((a) =>
+            a.status === "verifying" ? { ...a, status: "done" as const } : a
+          ));
           break;
         case "score":
           setStreamScore(event.evalScore);
