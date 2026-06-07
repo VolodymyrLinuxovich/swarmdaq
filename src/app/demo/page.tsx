@@ -27,27 +27,25 @@ const STATUS_LABEL: Record<string, string> = {
 // ── Trust graph data ─────────────────────────────────────────────────────────
 
 const AGENT_NODES = [
-  { id: "market_maker",    name: "Market\nMaker",    x: 160, y: 140, color: "#22c55e" },
-  { id: "planner",         name: "Planner",          x: 160, y:  36, color: "#00aaff" },
-  { id: "evaluator",       name: "Evaluator",        x: 233, y:  69, color: "#a855f7" },
-  { id: "reputation",      name: "Repute",           x: 262, y: 140, color: "#64748b" },
-  { id: "skeptic",         name: "Skeptic",          x: 233, y: 213, color: "#fbbf24" },
-  { id: "builder",         name: "Builder",          x: 160, y: 246, color: "#06b6d4" },
-  { id: "pitch",           name: "Pitch",            x:  87, y: 213, color: "#f472b6" },
-  { id: "source_verifier", name: "Source\nVerify",   x:  58, y: 140, color: "#00ff88" },
-  { id: "research",        name: "Research",         x:  87, y:  69, color: "#ef4444" },
+  { id: "market_maker", name: "Market\nMaker",  x: 160, y: 140, color: "#22c55e" },
+  { id: "planner",      name: "Planner",         x: 160, y:  36, color: "#00aaff" },
+  { id: "evaluator",    name: "Evaluator",        x: 247, y:  80, color: "#a855f7" },
+  { id: "reputation",   name: "Repute",           x: 275, y: 160, color: "#64748b" },
+  { id: "claude",       name: "Claude",           x: 215, y: 235, color: "#f97316" },
+  { id: "codex",        name: "Codex",            x:  95, y: 235, color: "#06b6d4" },
+  { id: "gemini",       name: "Gemini",           x:  45, y: 160, color: "#ef4444" },
 ];
 
 const BASE_EDGES = [
-  { from: "research",      to: "source_verifier", baseColor: "#00aaff" },
-  { from: "skeptic",       to: "source_verifier", baseColor: "#a855f7" },
-  { from: "pitch",         to: "builder",         baseColor: "#f472b6" },
-  { from: "skeptic",       to: "pitch",           baseColor: "#fbbf24" },
-  { from: "planner",       to: "research",        baseColor: "#1e3a5f" },
-  { from: "planner",       to: "builder",         baseColor: "#1e3a5f" },
-  { from: "evaluator",     to: "reputation",      baseColor: "#2d1b69" },
-  { from: "market_maker",  to: "planner",         baseColor: "#14532d" },
-  { from: "market_maker",  to: "evaluator",       baseColor: "#14532d" },
+  { from: "gemini",      to: "claude",      baseColor: "#00aaff" },
+  { from: "claude",      to: "codex",       baseColor: "#f97316" },
+  { from: "codex",       to: "claude",      baseColor: "#06b6d4" },
+  { from: "planner",     to: "gemini",      baseColor: "#1e3a5f" },
+  { from: "planner",     to: "codex",       baseColor: "#1e3a5f" },
+  { from: "evaluator",   to: "reputation",  baseColor: "#2d1b69" },
+  { from: "market_maker", to: "planner",    baseColor: "#14532d" },
+  { from: "market_maker", to: "evaluator",  baseColor: "#14532d" },
+  { from: "market_maker", to: "claude",     baseColor: "#14532d" },
 ];
 
 // ── Message feed ─────────────────────────────────────────────────────────────
@@ -252,12 +250,12 @@ function AgentCard({ agent, bid, delay = 0, isActive = false, onClick }: { agent
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />
           <span className="text-xs font-bold text-slate-200">{agent.name}</span>
-          {agent.provider && agent.provider !== "gemini" && (
-            <span className="text-xs font-mono px-1 rounded"
-              style={{ color: agent.provider === "anthropic" ? "#f97316" : "#00ff88", backgroundColor: agent.provider === "anthropic" ? "rgba(249,115,22,0.1)" : "rgba(0,255,136,0.08)", border: `1px solid ${agent.provider === "anthropic" ? "rgba(249,115,22,0.3)" : "rgba(0,255,136,0.2)"}` }}>
-              {agent.provider === "anthropic" ? "claude" : "gpt-4o"}
-            </span>
-          )}
+          {agent.provider && (() => {
+            const isSystem = ["market_maker", "evaluator", "reputation", "planner"].includes(agent.id);
+            const pColor = isSystem ? "#475569" : agent.provider === "anthropic" ? "#f97316" : agent.provider === "openai" ? "#00ff88" : "#00aaff";
+            const pLabel = isSystem ? "System" : agent.provider === "anthropic" ? "Anthropic" : agent.provider === "openai" ? "OpenAI" : "Google";
+            return <span className="text-xs font-mono px-1 rounded" style={{ color: pColor, backgroundColor: `${pColor}15`, border: `1px solid ${pColor}40` }}>{pLabel}</span>;
+          })()}
         </div>
         <span className="text-xs font-mono" style={{ color }}>{STATUS_LABEL[agent.status]}</span>
       </div>
@@ -754,7 +752,7 @@ function MarketDecisionLog({ log }: { log: MarketDecisionEntry[] }) {
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-4 text-slate-700 flex-shrink-0">{i + 1}.</span>
                     <span className={`break-words ${i === 0 ? "text-green-400 font-bold" : "text-slate-500"}`}>{c.agentName}</span>
-                    {(() => { const p = AGENT_PROVIDER[c.agentId]; return p && p !== "gemini" ? <span className="text-xs px-1 rounded" style={{ color: PROVIDER_COLORS[p], backgroundColor: `${PROVIDER_COLORS[p]}18`, border: `1px solid ${PROVIDER_COLORS[p]}40` }}>{p === "anthropic" ? "claude" : "gpt-4o"}</span> : null; })()}
+                    {(() => { const p = AGENT_PROVIDER[c.agentId]; const isSystem = ["market_maker", "evaluator", "reputation", "planner"].includes(c.agentId); if (!p || isSystem) return null; return <span className="text-xs px-1 rounded" style={{ color: PROVIDER_COLORS[p], backgroundColor: `${PROVIDER_COLORS[p]}18`, border: `1px solid ${PROVIDER_COLORS[p]}40` }}>{p === "anthropic" ? "Anthropic" : p === "openai" ? "OpenAI" : "Google"}</span>; })()}
                     <span className="ml-auto font-bold" style={{ color: i === 0 ? "#00ff88" : "#475569" }}>{c.compositeScore.toFixed(4)}</span>
                   </div>
                   <div className="flex gap-3 pl-6 text-slate-800">
@@ -974,15 +972,13 @@ function ComparisonView({ run1, run4 }: { run1: MissionResult; run4: MissionResu
 // ── Live Agent Ticker ─────────────────────────────────────────────────────────
 
 const TICKER_STATIC = [
-  { text: "SkepticAgent", delta: "▲ +2", color: "#00ff88", label: "BUY" },
-  { text: "SourceVerifier", delta: "▲ +3", color: "#00ff88", label: "BUY" },
-  { text: "ResearchAgent", delta: "▼ -4", color: "#ef4444", label: "SELL" },
-  { text: "EvaluatorAgent", delta: "▲ +2", color: "#00ff88", label: "BUY" },
-  { text: "PitchAgent", delta: "▲ +1", color: "#fbbf24", label: "HOLD" },
-  { text: "MarketMaker", delta: "▲ +1", color: "#00ff88", label: "BUY" },
-  { text: "BuilderAgent", delta: "─ +0", color: "#64748b", label: "HOLD" },
-  { text: "PlannerAgent", delta: "─ +0", color: "#64748b", label: "HOLD" },
-  { text: "ReputationAgent", delta: "▲ +1", color: "#00ff88", label: "BUY" },
+  { text: "ClaudeAgent",    delta: "▲ +3", color: "#00ff88", label: "BUY" },
+  { text: "GeminiAgent",    delta: "▼ -3", color: "#ef4444", label: "SELL" },
+  { text: "CodexAgent",     delta: "▲ +2", color: "#00ff88", label: "BUY" },
+  { text: "EvaluatorAgent", delta: "▲ +1", color: "#fbbf24", label: "HOLD" },
+  { text: "MarketMaker",    delta: "▲ +1", color: "#00ff88", label: "BUY" },
+  { text: "PlannerAgent",   delta: "─ +0", color: "#64748b", label: "HOLD" },
+  { text: "ReputationAgent", delta: "─ +0", color: "#64748b", label: "HOLD" },
 ];
 
 function LiveTicker({ agents, reputationChanges }: { agents: Agent[]; reputationChanges?: MissionResult["reputationChanges"] }) {

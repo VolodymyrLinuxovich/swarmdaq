@@ -58,7 +58,7 @@ const FALLBACK_OUTPUTS: Record<string, Record<string, string>> = {
 
     run3: `**Market Research Report** (Run 3 — Over-Hedged)
 
-**Market Size**: $4.8B (HolonIQ 2024, verified). ⚠️ CAUTION: This assumes sustained ed-tech growth. Downside scenario: $2.1B if spending contracts 30% (SkepticAgent flag). Treat as upper bound.
+**Market Size**: $4.8B (HolonIQ 2024, verified). ⚠️ CAUTION: This assumes sustained ed-tech growth. Downside scenario: $2.1B if spending contracts 30% (risk-hedged flag). Treat as upper bound.
 
 **Target Audience**: 2.3M annual hackathon participants (MLH 2024, confirmed). However, paid conversion rate is speculative — no primary data available. User interviews (n=24) may not be representative of the full population.
 
@@ -69,7 +69,7 @@ const FALLBACK_OUTPUTS: Record<string, Record<string, string>> = {
 
 **Key Insight**: 71% narrative clarity gap confirmed (MLH, n=12,400). ⚠️ Note: survey methodology not independently audited.
 
-*SkepticAgent flagged 6 claims for additional verification. Confidence: medium-high with caveats on 4 data points.*`,
+*ClaudeAgent flagged 6 claims for additional verification. Confidence: medium-high with caveats on 4 data points.*`,
 
     run4: `**Market Research Report** (Run 4 — Calibrated)
 
@@ -78,7 +78,7 @@ const FALLBACK_OUTPUTS: Record<string, Record<string, string>> = {
 **Target Audience**: Top 20% of hackathon participants — "competitive hackers" who treat hackathons as career accelerants. These users pay for edge, share virally within teams, and evangelize within university networks. NPS: 78 from post-event surveys.
 
 **Competitive Landscape**:
-- **Moat analysis** (SkepticAgent + BuilderAgent synthesis): The judge-feedback flywheel creates compounding defensibility. Big players can replicate the tool; they cannot replicate 100K judge evaluations.
+- **Moat analysis** (ClaudeAgent + CodexAgent synthesis): The judge-feedback flywheel creates compounding defensibility. Big players can replicate the tool; they cannot replicate 100K judge evaluations.
 - OpenAI/Anthropic threat: Real, 6-month window. Speed is the mitigation.
 
 **Verified Opportunity**: 71% of hackathon losses traced to narrative clarity (MLH, n=12,400). No incumbent addresses this. Window is open — capture it before GenAI platforms go vertical.`,
@@ -130,7 +130,7 @@ const FALLBACK_OUTPUTS: Record<string, Record<string, string>> = {
 
 **Value Proposition**: ResearchSprint may help teams reduce research-to-narrative time, subject to output verification. Teams are advised to review AI-generated content carefully before presenting to judges.
 
-**Caveats and Limitations** (SkepticAgent-weighted):
+**Caveats and Limitations** (risk-weighted):
 - Not suitable for teams prioritizing deep technical analysis over narrative
 - AI outputs require human review and fact-checking
 - Competitive claims should be independently verified
@@ -150,7 +150,7 @@ const FALLBACK_OUTPUTS: Record<string, Record<string, string>> = {
 
 **Target Segment**: Competitive hackers who treat hackathons as auditions for their career. 2.3M annually. Top 20% have willingness to pay and viral coefficient > 1.
 
-**Why this wins** (BuilderAgent + SkepticAgent synthesis):
+**Why this wins** (CodexAgent + ClaudeAgent synthesis):
 1. **Specificity**: Only tool built for the 36-hour sprint — not general productivity
 2. **Defensibility**: Judge feedback flywheel compounds with every event
 3. **Credibility**: 2.8x win rate across 18 hackathons is auditable, not projected
@@ -214,7 +214,7 @@ const FALLBACK_OUTPUTS: Record<string, Record<string, string>> = {
 
 **CTA**: Try ResearchSprint — See If It Works For Your Team
 
-*EvaluatorAgent note: This copy would convert at < 1%. Hedging language directly undermines the emotional hook that hackathon users respond to. PitchAgent's absence is visible throughout.*`,
+*EvaluatorAgent note: This copy would convert at < 1%. Hedging language directly undermines the emotional hook that hackathon users respond to. ClaudeAgent's risk-weighted framing is visible throughout.*`,
 
     run4: `**Landing Page Copy** (Run 4 — Peak)
 
@@ -280,7 +280,7 @@ const FALLBACK_OUTPUTS: Record<string, Record<string, string>> = {
 
     run3: `**90-Second Pitch Script** (Run 3 — FAILURE: Risk-Lecture)
 
-[0-8s] RISK-FIRST OPENING (SkepticAgent override)
+[0-8s] RISK-FIRST OPENING (risk over-rotation)
 "Before we get into the pitch, judges should understand the risk landscape: AI commoditization is high, student willingness-to-pay is uncertain, and our competitive moat is approximately 6 months deep at most."
 
 [8-30s] MARKET CONTEXT (hedged)
@@ -295,20 +295,20 @@ const FALLBACK_OUTPUTS: Record<string, Record<string, string>> = {
 [75-90s] CLOSE (tentative)
 "We're raising $400K, subject to market conditions and investor risk tolerance. If the risk profile is acceptable to you, we'd welcome a conversation."
 
-⚠️ **EvaluatorAgent**: PitchAgent's narrative voice was overridden by SkepticAgent's risk framing. This pitch would score 3/10 with judges. Emotional hook is absent. Opening with risks is fatal. Penalty applied: PitchAgent −3 rep. SkepticAgent −1 rep (over-insertion into narrative task).`,
+⚠️ **EvaluatorAgent**: ClaudeAgent's risk analysis framing over-rotated into the pitch task. This pitch would score 3/10 with judges. Emotional hook is absent. Opening with risks is fatal. Penalty applied: ClaudeAgent −2 rep (risk over-rotation into narrative task).`,
 
     run4: `**90-Second Pitch Script** (Run 4 — Calibrated Peak)
 
-[0-8s] HOOK — BuilderAgent narrative core, PitchAgent voice
+[0-8s] HOOK — CodexAgent product clarity, ClaudeAgent narrative voice
 "Three months ago, a team at HackPrinceton spent 4 hours organizing their research. Their project was brilliant. They placed 12th. We're here because that story happens 10,000 times every weekend."
 
-[8-25s] PROBLEM — SourceVerifier-backed data
+[8-25s] PROBLEM — GeminiAgent-verified data
 "MLH surveyed 12,400 teams. 71% of losses traced to one thing: judges couldn't understand the problem in the first 90 seconds. Not the code. The story. That's not a presentation failure — it's a market gap."
 
-[25-45s] SOLUTION — PitchAgent lead, BuilderAgent product depth
+[25-45s] SOLUTION — ClaudeAgent lead, CodexAgent product depth
 "ResearchSprint closes that gap in 11 minutes. [demo] Paste your research chaos. Get a narrative arc, a demo script, and positioning that holds under pressure. The judge-perspective mode stress-tests your story before they do."
 
-[45-65s] PROOF + MOAT — SkepticAgent risk addressed gracefully
+[45-65s] PROOF + MOAT — ClaudeAgent risk addressed gracefully
 "2.8x win rate, 240 teams, 18 hackathons. The moat isn't the tool — it's the feedback flywheel. Every pitch we help win trains our scoring model. OpenAI can replicate the feature. They can't replicate 100,000 judge evaluations."
 
 [65-90s] CLOSE
@@ -338,7 +338,7 @@ GPT-5 with better prompting could replicate core features.
 If MLH changes APIs or terms, integration value drops.
 *Mitigation*: Direct university partnerships as primary channel.`,
 
-    run2: `**Risk Analysis** (SkepticAgent + SourceVerifier Hardened — Run 2)
+    run2: `**Risk Analysis** (ClaudeAgent-Hardened — Run 2)
 
 **Risk 1: AI Commoditization** (Critical — Updated)
 *Specific Threat*: Anthropic is building hackathon-specific tools internally (unconfirmed but plausible given their education initiatives). OpenAI's Canvas mode directly targets document synthesis.
@@ -361,7 +361,7 @@ One API change breaks integration value.
 Some hackathons are beginning to require AI disclosure.
 *Mitigation*: Pro-transparency stance is a differentiator. "AI-assisted" badge as trust signal.`,
 
-    run3: `**Risk Analysis** (Run 3 — Comprehensive, SkepticAgent-led)
+    run3: `**Risk Analysis** (Run 3 — Comprehensive, ClaudeAgent-led)
 
 **Risk 1: AI Commoditization** (Critical)
 OpenAI Canvas, Anthropic education initiatives, Google NotebookLM — all converging on document synthesis. 6-month competitive window before feature parity. Mitigation: Judge feedback flywheel. Urgency: IMMEDIATE.
@@ -399,7 +399,7 @@ Output quality guardrails shipping in v1.2. Confidence scoring added. 15% poor o
 **Risk 4: Data Privacy** (Medium)
 Zero-retention mode in development. GDPR-ready architecture. Legal review scheduled for month 2.
 
-**Overall SkepticAgent Assessment**: Risk profile is manageable. The commoditization risk is the only existential threat — and the flywheel is the correct answer. Execute on speed, not defense. Recommend acknowledging commoditization risk directly with investors as a sign of intellectual honesty.`,
+**Overall ClaudeAgent Assessment**: Risk profile is manageable. The commoditization risk is the only existential threat — and the flywheel is the correct answer. Execute on speed, not defense. Recommend acknowledging commoditization risk directly with investors as a sign of intellectual honesty.`,
   },
 
   final_eval: {
@@ -408,19 +408,18 @@ Zero-retention mode in development. GDPR-ready architecture. Legal review schedu
 Overall Score: 74/100
 
 Quality: 72/100 — Solid structure, some sections lack depth
-Factuality: 68/100 — ⚠️ ResearchAgent made an unsupported market-size claim ($4.2B figure cited without source). Medium confidence.
+Factuality: 68/100 — ⚠️ GeminiAgent made an unsupported market-size claim ($4.2B figure cited without source). Medium confidence.
 Usefulness: 78/100 — Good actionable content, pitch script is strong
 Specificity: 70/100 — Some vague assertions about competitive landscape
 Actionability: 76/100 — Clear next steps in most sections
 Collaboration: 74/100 — Good cross-section coherence
 
 **EvaluatorAgent Findings**:
-⚠️ WARNING: ResearchAgent made an unsupported market-size claim. The $4.2B figure lacks a verifiable source. Future market research should pair ResearchAgent with SourceVerifierAgent to validate claims before submission.
+⚠️ WARNING: GeminiAgent made an unsupported market-size claim. The $4.2B figure lacks a verifiable source. ClaudeAgent flagged the verification gap — factuality correction begins next run.
 
 **Reputation Updates**:
-- ResearchAgent: −4 rep (unsupported factual claim)
-- SourceVerifierAgent: +3 rep (correctly flagged by evaluator)
-- SkepticAgent: +2 rep (risk analysis was thorough)`,
+- GeminiAgent: −3 rep (unsupported factual claim)
+- ClaudeAgent: +2 rep (critique correctly flagged factuality gap)`,
 
     run2: `**Final Evaluation — Run 2**
 
@@ -434,57 +433,55 @@ Actionability: 93/100 — Clear roadmap in every section
 Collaboration: 88/100 — Seamless integration between research, positioning, and pitch
 
 **EvaluatorAgent Findings**:
-✅ IMPROVEMENT: SourceVerifierAgent successfully caught and corrected the market-size claim from run 1. All figures now cite sources.
-✅ IMPROVEMENT: SkepticAgent hardened the risk analysis with specific competitive threats.
-✅ IMPROVEMENT: The pitch script improved from generic to story-driven with specific proof points.
+✅ IMPROVEMENT: ClaudeAgent independently verified market claims — all figures now cite sources.
+✅ IMPROVEMENT: GeminiAgent corrected research methodology — claims now properly sourced.
+✅ IMPROVEMENT: ClaudeAgent's narrative upgrade drove story-first structure with verified proof points.
 
 **Reputation Updates**:
-- SourceVerifierAgent: +3 (drove factuality improvement)
-- ResearchAgent: +2 (learned from penalty, performed better with verification support)
-- SkepticAgent: +2 (hardened risk section successfully)`,
+- ClaudeAgent: +3 rep (independent verification drove factuality improvement)
+- GeminiAgent: +2 rep (corrected research methodology with proper sourcing)
+- CodexAgent: +1 rep (positioning depth contributed to quality improvement)`,
 
     run3: `**Final Evaluation — Run 3**
 
 Overall Score: 85/100
 
 Quality: 84/100 — Structure solid but narrative sections lack confidence
-Factuality: 96/100 — SkepticAgent's influence kept claims tightly sourced
+Factuality: 96/100 — GeminiAgent maintained research standards through the regression
 Usefulness: 78/100 — Over-hedging reduced actionability in positioning and copy
 Specificity: 88/100 — Strong specifics in risk and research sections
 Actionability: 72/100 — Too many caveats undermine clarity of next steps
 Collaboration: 87/100 — Good coherence on research/risk; pitch section disconnected
 
 **EvaluatorAgent Findings**:
-⚠️ REGRESSION: Market over-rotated after run 2's success. SkepticAgent's weight increased, displacing PitchAgent from the pitch_script task. The resulting pitch opened with a risk lecture — fatal for investor/judge audiences.
+⚠️ REGRESSION: ClaudeAgent's risk analysis framing bled into the pitch_script task. The resulting pitch opened with a risk lecture — fatal for investor/judge audiences.
 ⚠️ NARRATIVE FAILURE: Landing page copy became hedged and passive ("may help teams who..."). Confidence dropped from run 2 levels.
-✅ MAINTAINED: Factuality remained high. SkepticAgent's risk analysis is the strongest yet.
+✅ MAINTAINED: Factuality remained high at 96. GeminiAgent held research standards throughout.
 
 **Reputation Updates**:
-- PitchAgent: −3 rep (narrative quality failure; pitch opened with risks, not story)
-- SkepticAgent: −1 rep (over-inserted risk framing into pitch task outside its domain)
-- SourceVerifierAgent: +1 rep (maintained factuality standards)`,
+- ClaudeAgent: −2 rep (risk over-rotation into pitch task — narrative quality fell)
+- GeminiAgent: +1 rep (maintained factuality standards through narrative regression)`,
 
     run4: `**Final Evaluation — Run 4**
 
 Overall Score: 96/100
 
 Quality: 96/100 — Best structural quality across all 4 runs
-Factuality: 95/100 — Verified sources maintained, SkepticAgent contribution calibrated correctly
+Factuality: 95/100 — Verified sources maintained, risk framing calibrated correctly
 Usefulness: 97/100 — Every deliverable is immediately actionable
 Specificity: 94/100 — Specific metrics, specific names, specific timelines throughout
 Actionability: 98/100 — Clearest next steps in any run
-Collaboration: 95/100 — Perfect integration: PitchAgent narrative + SkepticAgent risk + BuilderAgent product depth
+Collaboration: 95/100 — Perfect integration: ClaudeAgent narrative + risk calibration + CodexAgent product depth
 
 **EvaluatorAgent Findings**:
-✅ PEAK PERFORMANCE: The market learned to balance skepticism with narrative. PitchAgent leads pitch tasks, SkepticAgent informs without overriding.
+✅ PEAK PERFORMANCE: The market learned to balance risk analysis with narrative. ClaudeAgent separates the risk voice from the pitch voice — informing without overriding.
 ✅ ARC COMPLETE: 74 → 91 → 85 → 96. The regression in run 3 was necessary — it exposed the over-rotation risk. Run 4 represents a calibrated, mature swarm.
 ✅ PITCH EXCELLENCE: The run 4 pitch is the strongest across all runs. Emotional hook + verified data + moat argument, all in 90 seconds.
 
 **Reputation Updates**:
-- PitchAgent: +4 rep (exceptional narrative recovery; best pitch of the series)
-- BuilderAgent: +2 rep (narrative-product integration elevated the pitch)
-- SkepticAgent: +2 rep (calibrated support role, risk woven in gracefully)
-- SourceVerifierAgent: +1 rep (maintained factuality through the arc)`,
+- ClaudeAgent: +4 rep (exceptional pitch recovery — narrative + risk integration delivered best score)
+- CodexAgent: +2 rep (product depth and architecture proof points elevated usefulness to 97)
+- GeminiAgent: +1 rep (sustained research quality through full arc)`,
   },
 };
 

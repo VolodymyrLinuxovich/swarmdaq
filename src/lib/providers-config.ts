@@ -2,15 +2,13 @@
 export type LLMProvider = "gemini" | "openai" | "anthropic";
 
 export const AGENT_PROVIDER: Record<string, LLMProvider> = {
-  planner:        "gemini",
-  research:       "gemini",
-  source_verifier:"gemini",
-  market_maker:   "gemini",
-  reputation:     "gemini",
-  builder:        "openai",
-  pitch:          "anthropic",
-  skeptic:        "anthropic",
-  evaluator:      "anthropic",
+  planner:      "gemini",
+  codex:        "openai",
+  claude:       "anthropic",
+  gemini:       "gemini",
+  market_maker: "gemini",
+  evaluator:    "anthropic",
+  reputation:   "gemini",
 };
 
 export const PROVIDER_LABELS: Record<LLMProvider, string> = {

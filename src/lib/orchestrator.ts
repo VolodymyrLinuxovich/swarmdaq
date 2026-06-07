@@ -73,38 +73,34 @@ const SEEDED_SCORES: Record<number, EvalScore> = {
 
 const SEEDED_REP_UPDATES: Record<number, Array<{ id: string; delta: number; reason: string; eloDelta: number }>> = {
   1: [
-    { id: "research", delta: -4, reason: "Unsupported market-size claim ($4.2B without source)", eloDelta: -18 },
-    { id: "source_verifier", delta: 3, reason: "Correctly flagged for future verification pairing", eloDelta: 12 },
-    { id: "skeptic", delta: 2, reason: "Thorough risk analysis surfaced critical gaps", eloDelta: 10 },
+    { id: "gemini", delta: -3, reason: "Unsupported market-size claim ($4.2B without source)", eloDelta: -12 },
+    { id: "claude", delta:  2, reason: "Critique correctly flagged factuality gap for future correction", eloDelta: 10 },
   ],
   2: [
-    { id: "source_verifier", delta: 3, reason: "Drove factuality improvement from 68 → 94", eloDelta: 15 },
-    { id: "research", delta: 2, reason: "Performed better with verification support", eloDelta: 8 },
-    { id: "skeptic", delta: 2, reason: "Hardened risk section with verified competitive threats", eloDelta: 10 },
-    { id: "pitch", delta: 1, reason: "Improved narrative with data-driven proof points", eloDelta: 5 },
+    { id: "gemini", delta:  2, reason: "Corrected research methodology — claims properly sourced", eloDelta: 8 },
+    { id: "claude", delta:  3, reason: "Independent verification drove factuality from 68 → 94", eloDelta: 15 },
+    { id: "codex",  delta:  1, reason: "Positioning depth contributed to quality improvement", eloDelta: 5 },
   ],
   3: [
-    { id: "pitch", delta: -3, reason: "Narrative failure: pitch opened with risk lecture, not story", eloDelta: -14 },
-    { id: "skeptic", delta: -1, reason: "Over-inserted risk framing into pitch task", eloDelta: -5 },
-    { id: "source_verifier", delta: 1, reason: "Maintained factuality standards through over-rotation", eloDelta: 4 },
+    { id: "claude", delta: -2, reason: "Risk analysis over-rotated into pitch — narrative quality fell (actionability 72/100)", eloDelta: -10 },
+    { id: "gemini", delta:  1, reason: "Maintained factuality standards at 96 through narrative regression", eloDelta: 4 },
   ],
   4: [
-    { id: "pitch", delta: 4, reason: "Exceptional narrative recovery — best pitch of the series", eloDelta: 22 },
-    { id: "builder", delta: 2, reason: "Narrative-product integration elevated quality", eloDelta: 10 },
-    { id: "skeptic", delta: 2, reason: "Calibrated support role: risk woven in gracefully", eloDelta: 10 },
-    { id: "source_verifier", delta: 1, reason: "Maintained factuality through the full arc", eloDelta: 4 },
+    { id: "claude", delta:  4, reason: "Exceptional pitch recovery — narrative + risk integration delivered best score of arc", eloDelta: 22 },
+    { id: "codex",  delta:  2, reason: "Product depth and architecture proof points elevated usefulness to 97", eloDelta: 10 },
+    { id: "gemini", delta:  1, reason: "Sustained research quality through full arc", eloDelta: 4 },
   ],
 };
 
 // Task-agent affinity reference — routing uses MarketMaker scores, not this map directly
 /* eslint-disable @typescript-eslint/no-unused-vars */
 const TASK_AGENT_AFFINITY: Record<string, string[]> = {
-  market_research: ["research", "source_verifier"],
-  positioning: ["builder", "planner"],
-  landing_page_copy: ["pitch", "builder"],
-  pitch_script: ["pitch", "skeptic"],
-  risk_review: ["skeptic", "source_verifier"],
-  final_eval: ["evaluator"],
+  market_research:  ["gemini"],
+  positioning:      ["codex"],
+  landing_page_copy: ["claude", "codex"],
+  pitch_script:     ["claude"],
+  risk_review:      ["claude"],
+  final_eval:       ["evaluator"],
 };
 /* eslint-enable @typescript-eslint/no-unused-vars */
 
@@ -330,34 +326,11 @@ async function selectAgentForTask(
   };
 
   // ── SEEDED_DEMO scripted routing ──────────────────────────────────────────
-  if (mode === "SEEDED_DEMO") {
-    // Run 2: pair research with source_verifier (learned from run 1 factuality failure)
-    if (runNum === 2 && task.type === "market_research") {
-      const researchPair = scored.filter((s) =>
-        ["research", "source_verifier"].includes(s.agent.id)
-      );
-      if (researchPair.length > 0) {
-        researchPair.sort((a, b) => b.score - a.score);
-        return { agent: researchPair[0].agent, bids, decisionEntry: await makeEntry(researchPair[0].agent) };
-      }
-    }
-
-    // Run 3: SkepticAgent over-rotated — forces skeptic into pitch_script (the regression)
-    if (runNum === 3 && task.type === "pitch_script") {
-      const skepticFirst = scored.find((s) => s.agent.id === "skeptic");
-      if (skepticFirst) return { agent: skepticFirst.agent, bids, decisionEntry: await makeEntry(skepticFirst.agent) };
-    }
-
-    // Run 4: PitchAgent leads pitch, BuilderAgent on copy — balanced recovery
-    if (runNum >= 4 && task.type === "pitch_script") {
-      const pitchAgent = scored.find((s) => s.agent.id === "pitch");
-      if (pitchAgent) return { agent: pitchAgent.agent, bids, decisionEntry: await makeEntry(pitchAgent.agent) };
-    }
-    if (runNum >= 4 && task.type === "landing_page_copy") {
-      const builderAgent = scored.find((s) => s.agent.id === "builder");
-      if (builderAgent) return { agent: builderAgent.agent, bids, decisionEntry: await makeEntry(builderAgent.agent) };
-    }
-  }
+  // Natural skill routing already produces the correct swarm:
+  //   GeminiAgent → market_research (research, market_analysis)
+  //   CodexAgent  → positioning     (product_design, positioning)
+  //   ClaudeAgent → pitch_script, risk_review, landing_page_copy (pitch, narrative, risk_analysis, copywriting)
+  // No overrides needed — seeded outputs and rep updates tell the arc story.
 
   // Newcomer tryout: a custom agent with 0 runs and perfect skill match gets one guaranteed slot
   const newcomer = scored.find(
@@ -393,32 +366,23 @@ function computeRepUpdates(
     if (!workerIds.has(agent.id)) continue;
     let delta = 0, reason = "", eloDelta = 0;
 
-    if (agent.id === "research") {
-      if (badFactuality) { delta = -4; eloDelta = -18; reason = `Factuality gap (${evalScore.factuality}/100) — unverified claims detected`; }
+    if (agent.id === "gemini") {
+      if (badFactuality) { delta = -3; eloDelta = -12; reason = `Factuality gap (${evalScore.factuality}/100) — unverified claims detected`; }
       else if (goodFactuality && highScore) { delta = 2; eloDelta = 8; reason = `Well-sourced research drove factuality to ${evalScore.factuality}/100`; }
-    } else if (agent.id === "source_verifier") {
-      if (goodFactuality) { delta = 3; eloDelta = 14; reason = `Source verification drove factuality to ${evalScore.factuality}/100`; }
-      else if (evalScore.factuality >= 78) { delta = 1; eloDelta = 4; reason = `Maintained factuality at ${evalScore.factuality}/100`; }
-    } else if (agent.id === "skeptic") {
+    } else if (agent.id === "claude") {
       const pitchTaskAgent = Object.entries(taskAssignments).find(([t]) => t === "pitch_script")?.[1];
-      const skepticOwnsNarrative = pitchTaskAgent?.id === "skeptic";
-      if (skepticOwnsNarrative && badNarrative) { delta = -2; eloDelta = -10; reason = `Risk framing dominated pitch — actionability dropped to ${evalScore.actionability}/100`; }
-      else if (!skepticOwnsNarrative && veryHighScore) { delta = 2; eloDelta = 10; reason = `Risk analysis contributed to peak quality (${evalScore.overall}/100)`; }
-      else if (!skepticOwnsNarrative && highScore) { delta = 1; eloDelta = 5; reason = `Risk review maintained quality (${evalScore.overall}/100)`; }
-    } else if (agent.id === "pitch") {
-      const pitchTaskAgent = Object.entries(taskAssignments).find(([t]) => t === "pitch_script")?.[1];
-      if (pitchTaskAgent?.id === "pitch") {
-        if (goodNarrative && veryHighScore) { delta = 4; eloDelta = 20; reason = `Exceptional pitch narrative (actionability:${evalScore.actionability} usefulness:${evalScore.usefulness})`; }
-        else if (goodNarrative && highScore) { delta = 2; eloDelta = 10; reason = `Strong pitch narrative (actionability:${evalScore.actionability})`; }
-        else if (badNarrative) { delta = -3; eloDelta = -14; reason = `Narrative below threshold (actionability:${evalScore.actionability}/100 usefulness:${evalScore.usefulness}/100)`; }
-      }
-    } else if (agent.id === "builder") {
+      const claudeOwnsPitch = pitchTaskAgent?.id === "claude";
+      if (claudeOwnsPitch && badNarrative) { delta = -2; eloDelta = -10; reason = `Risk framing over-rotated into pitch — actionability dropped to ${evalScore.actionability}/100`; }
+      else if (claudeOwnsPitch && goodNarrative && veryHighScore) { delta = 4; eloDelta = 20; reason = `Exceptional pitch narrative (actionability:${evalScore.actionability} usefulness:${evalScore.usefulness})`; }
+      else if (claudeOwnsPitch && goodNarrative && highScore) { delta = 2; eloDelta = 10; reason = `Strong pitch narrative (actionability:${evalScore.actionability})`; }
+      else if (goodFactuality && highScore) { delta = 2; eloDelta = 8; reason = `Critique and verification drove factuality to ${evalScore.factuality}/100`; }
+    } else if (agent.id === "codex") {
       if (veryHighScore && evalScore.usefulness >= 90) { delta = 2; eloDelta = 10; reason = `Product depth elevated usefulness to ${evalScore.usefulness}/100`; }
-      else if (highScore) { delta = 1; eloDelta = 4; reason = `Contributed to high quality output (${evalScore.overall}/100)`; }
+      else if (highScore) { delta = 1; eloDelta = 4; reason = `Implementation quality contributed to mission score ${evalScore.overall}/100`; }
       else if (lowScore) { delta = -1; eloDelta = -5; reason = `Output below quality threshold (${evalScore.overall}/100)`; }
     }
 
-    // Generic fallback for agents not specifically covered
+    // Generic fallback for agents not specifically covered above
     if (delta === 0 && !["evaluator", "market_maker", "planner", "reputation"].includes(agent.id)) {
       if (highScore) { delta = 1; eloDelta = 4; reason = `Contributed to successful mission (${evalScore.overall}/100)`; }
       else if (lowScore) { delta = -1; eloDelta = -4; reason = `Mission below quality threshold (${evalScore.overall}/100)`; }
@@ -451,45 +415,40 @@ const DELIBERATION_FALLBACKS: Record<number, {
 }> = {
   1: {
     entries: [
-      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "The $4.2B market-size figure has no cited source — any investor will challenge this immediately.", severity: "critical" },
-      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "The 73% stat is suspiciously round. Unattributed data damages credibility more than no data.", severity: "minor" },
-      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "The '4am hands-up' opener is sharp — immediately relatable, emotionally specific." },
-      { kind: "objection", criticName: "SourceVerifierAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "Cannot verify $4.2B against HolonIQ, Gartner, or IDC current data. Figure appears fabricated.", severity: "critical" },
-      { kind: "endorsement", criticName: "SourceVerifierAgent", targetAgentName: "SkepticAgent", taskType: "risk_analysis", claim: "Commoditization risk is correctly framed as existential and urgent — well done." },
+      { kind: "objection", criticName: "ClaudeAgent", targetAgentName: "GeminiAgent", taskType: "market_research", claim: "The $4.2B market-size figure has no cited source — any investor will challenge this immediately.", severity: "critical" },
+      { kind: "objection", criticName: "ClaudeAgent", targetAgentName: "GeminiAgent", taskType: "market_research", claim: "The 73% stat is suspiciously round. Unattributed data damages credibility more than no data.", severity: "minor" },
+      { kind: "endorsement", criticName: "ClaudeAgent", targetAgentName: "CodexAgent", taskType: "positioning", claim: "The hackathon-native framing is immediately clear and differentiated. Strong positioning." },
     ],
     revisions: [
-      { agentName: "ResearchAgent", taskType: "market_research", summary: "Added '(source: verification required)' caveat to the $4.2B figure and downgraded claim confidence to low." },
+      { agentName: "GeminiAgent", taskType: "market_research", summary: "Added '(source: verification required)' caveat to the $4.2B figure and downgraded claim confidence to low." },
     ],
   },
   2: {
     entries: [
-      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "All figures now cite sources — HolonIQ and MLH data are verifiable. Significant improvement." },
-      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "Story-driven structure with verified proof points is exactly the right fix from run 1." },
-      { kind: "endorsement", criticName: "SourceVerifierAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "MLH 2024 survey data (n=12,400) is real and verifiable. High confidence. Great sourcing." },
-      { kind: "endorsement", criticName: "SourceVerifierAgent", targetAgentName: "SkepticAgent", taskType: "risk_analysis", claim: "Every risk now has a named mitigation with a timeline. This is what investors want to see." },
+      { kind: "endorsement", criticName: "ClaudeAgent", targetAgentName: "GeminiAgent", taskType: "market_research", claim: "All figures now cite sources — HolonIQ and MLH data are verifiable. Significant improvement." },
+      { kind: "endorsement", criticName: "ClaudeAgent", targetAgentName: "GeminiAgent", taskType: "market_research", claim: "MLH 2024 survey data (n=12,400) is real and verifiable. High confidence. Great sourcing." },
+      { kind: "endorsement", criticName: "ClaudeAgent", targetAgentName: "CodexAgent", taskType: "positioning", claim: "Competitive matrix with verified metrics is exactly what investors want to see." },
     ],
     revisions: [],
   },
   3: {
     entries: [
-      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "This pitch opens with risk framing, not a story. Judges tune out after 10 seconds of caveats.", severity: "critical" },
-      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "BuilderAgent", taskType: "landing_page_copy", claim: "Headline 'An AI Tool That Helps You Organize Research' is passive and forgettable.", severity: "minor" },
-      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "SourceVerifierAgent", taskType: "market_research", claim: "Factuality held at 96 — every claim is watertight despite over-rotation elsewhere." },
-      { kind: "objection", criticName: "SourceVerifierAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "Opening line 'May improve pitch preparation' undercuts the confidence established in run 2.", severity: "critical" },
+      { kind: "objection", criticName: "ClaudeAgent", targetAgentName: "GeminiAgent", taskType: "market_research", claim: "Market downside scenario framing risks undermining confidence in the core TAM claim.", severity: "minor" },
+      { kind: "endorsement", criticName: "ClaudeAgent", targetAgentName: "GeminiAgent", taskType: "market_research", claim: "Factuality held at 96 — every claim is watertight despite over-hedging in other sections." },
+      { kind: "endorsement", criticName: "ClaudeAgent", targetAgentName: "CodexAgent", taskType: "positioning", claim: "CodexAgent's product specificity adds the grounding the narrative needs to hold up." },
     ],
     revisions: [
-      { agentName: "PitchAgent", taskType: "pitch_script", summary: "Revised opening to lead with risk acknowledgment — partially addressed SkepticAgent objection but over-corrected, creating hedged narrative." },
+      { agentName: "ClaudeAgent", taskType: "pitch_script", summary: "Revised opening to lead with risk acknowledgment — partially addressed critique but over-corrected, creating hedged narrative instead of story-first." },
     ],
   },
   4: {
     entries: [
-      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "'The team that wins HackMIT isn't always the best engineers' — this is the sharpest line in the entire 4-run arc." },
-      { kind: "endorsement", criticName: "SkepticAgent", targetAgentName: "BuilderAgent", taskType: "landing_page_copy", claim: "The 'Isn't this just ChatGPT?' reframe is a masterclass in objection handling within copy." },
-      { kind: "objection", criticName: "SkepticAgent", targetAgentName: "PitchAgent", taskType: "pitch_script", claim: "The ask ($400K) should name the judge feedback flywheel specifically — it's the defensible moat.", severity: "minor" },
-      { kind: "endorsement", criticName: "SourceVerifierAgent", targetAgentName: "ResearchAgent", taskType: "market_research", claim: "2.8x win rate across 240 teams, 18 hackathons — this is verifiable and powerful social proof." },
+      { kind: "endorsement", criticName: "ClaudeAgent", targetAgentName: "GeminiAgent", taskType: "market_research", claim: "2.8x win rate across 240 teams, 18 hackathons — this is verifiable and powerful social proof." },
+      { kind: "endorsement", criticName: "ClaudeAgent", targetAgentName: "CodexAgent", taskType: "positioning", claim: "'Isn't this just ChatGPT?' reframe is a masterclass in objection handling within positioning." },
+      { kind: "objection", criticName: "ClaudeAgent", targetAgentName: "CodexAgent", taskType: "positioning", claim: "The ask ($400K) should name the judge feedback flywheel specifically in positioning — it's the defensible moat.", severity: "minor" },
     ],
     revisions: [
-      { agentName: "PitchAgent", taskType: "pitch_script", summary: "Strengthened the ask line: 'We're raising $400K to build the judge feedback flywheel — the only compounding moat in this market.'" },
+      { agentName: "ClaudeAgent", taskType: "pitch_script", summary: "Strengthened the ask line: 'We're raising $400K to build the judge feedback flywheel — the only compounding moat in this market.'" },
     ],
   },
 };
@@ -510,7 +469,7 @@ async function runDeliberation(params: {
 
   emit({ type: "deliberation_start" });
 
-  const critics = selectedAgents.filter((a) => ["skeptic", "source_verifier"].includes(a.id));
+  const critics = selectedAgents.filter((a) => ["claude"].includes(a.id));
   const isDefaultMission = mission.toLowerCase().includes("hackathon") || mission.toLowerCase().includes("student");
 
   // Use seeded fallbacks only in SEEDED_DEMO mode
@@ -992,31 +951,31 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
 
   const pairwiseProbabilities = [
     {
-      a: "source_verifier",
-      b: "research",
+      a: "claude",
+      b: "gemini",
       pABeatsB: bradleyTerryProbability(
-        freshAgents.find((a) => a.id === "source_verifier")?.elo ?? 1510,
-        freshAgents.find((a) => a.id === "research")?.elo ?? 1420
+        freshAgents.find((a) => a.id === "claude")?.elo ?? 1510,
+        freshAgents.find((a) => a.id === "gemini")?.elo ?? 1430
       ),
       dimension: "factuality",
     },
     {
-      a: "skeptic",
-      b: "builder",
+      a: "claude",
+      b: "codex",
       pABeatsB: bradleyTerryProbability(
-        freshAgents.find((a) => a.id === "skeptic")?.elo ?? 1540,
-        freshAgents.find((a) => a.id === "builder")?.elo ?? 1450
+        freshAgents.find((a) => a.id === "claude")?.elo ?? 1510,
+        freshAgents.find((a) => a.id === "codex")?.elo ?? 1455
       ),
-      dimension: "risk analysis",
+      dimension: "critique quality",
     },
     {
-      a: "pitch",
-      b: "research",
+      a: "codex",
+      b: "gemini",
       pABeatsB: bradleyTerryProbability(
-        freshAgents.find((a) => a.id === "pitch")?.elo ?? 1460,
-        freshAgents.find((a) => a.id === "research")?.elo ?? 1420
+        freshAgents.find((a) => a.id === "codex")?.elo ?? 1455,
+        freshAgents.find((a) => a.id === "gemini")?.elo ?? 1430
       ),
-      dimension: "narrative",
+      dimension: "implementation",
     },
   ];
 
@@ -1059,8 +1018,8 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
     if (mode === "SEEDED_DEMO") {
       const messageByRun: Record<number, string> = {
         2: `Market learned: factuality +${factDelta}, confidence +12%, risk −23%, cost +$0.03. Swarm objective ${prevPortfolio.objective.toFixed(2)} → ${swarmPortfolio.objective.toFixed(2)}.`,
-        3: `Market over-rotated: SkepticAgent displaced PitchAgent. Narrative quality −13%, factuality +${factDelta}. Score ${prevScore} → ${currScore}. Regression visible — rebalancing required.`,
-        4: `Market calibrated: PitchAgent + BuilderAgent synergy unlocked. Score ${prevScore} → ${currScore}. New peak across all dimensions. Swarm objective ${prevPortfolio.objective.toFixed(2)} → ${swarmPortfolio.objective.toFixed(2)}.`,
+        3: `Market over-rotated: ClaudeAgent applied risk framing to pitch. Narrative quality −13%, factuality +${factDelta}. Score ${prevScore} → ${currScore}. Regression visible — rebalancing required.`,
+        4: `Market calibrated: ClaudeAgent + CodexAgent synergy unlocked. Score ${prevScore} → ${currScore}. New peak across all dimensions. Swarm objective ${prevPortfolio.objective.toFixed(2)} → ${swarmPortfolio.objective.toFixed(2)}.`,
       };
       message = messageByRun[runNum] ?? defaultMsg;
     } else {
