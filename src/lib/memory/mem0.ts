@@ -1,5 +1,14 @@
+import MemoryClient from "mem0ai";
+
 const MEM0_API_KEY = process.env.MEM0_API_KEY;
-const MEM0_BASE_URL = "https://api.mem0.ai/v1";
+
+let _client: MemoryClient | null = null;
+
+function getClient(): MemoryClient | null {
+  if (!MEM0_API_KEY) return null;
+  if (!_client) _client = new MemoryClient({ apiKey: MEM0_API_KEY });
+  return _client;
+}
 
 const devWarnings = new Set<string>();
 function warnOnce(key: string, msg: string) {
@@ -35,30 +44,6 @@ export interface Mem0Memory {
   created_at?: string;
 }
 
-// ── Core fetch helper ─────────────────────────────────────────────────────────
-
-async function mem0Fetch<T>(path: string, init: RequestInit): Promise<T | null> {
-  if (!MEM0_API_KEY) return null;
-  try {
-    const res = await fetch(`${MEM0_BASE_URL}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Token ${MEM0_API_KEY}`,
-        ...(init.headers as Record<string, string> | undefined),
-      },
-    });
-    if (!res.ok) {
-      warnOnce(`mem0-${path}`, `[mem0] ${path} returned ${res.status}`);
-      return null;
-    }
-    return (await res.json()) as T;
-  } catch (err) {
-    warnOnce(`mem0-fetch-${path}`, `[mem0] fetch failed: ${(err as Error).message}`);
-    return null;
-  }
-}
-
 // ── Core save / search ────────────────────────────────────────────────────────
 
 export async function saveAgentMemory(params: {
@@ -67,18 +52,23 @@ export async function saveAgentMemory(params: {
   content: string;
   metadata?: Mem0MemoryMeta;
 }): Promise<boolean> {
-  if (!MEM0_API_KEY) return false;
-  const result = await mem0Fetch<unknown>("/memories/", {
-    method: "POST",
-    body: JSON.stringify({
-      messages: [{ role: "user", content: params.content }],
-      user_id: "swarmdaq",
-      agent_id: params.agentId,
-      run_id: params.runId,
-      metadata: params.metadata ?? {},
-    }),
-  });
-  return result !== null;
+  const client = getClient();
+  if (!client) return false;
+  try {
+    await client.add(
+      [{ role: "user", content: params.content }],
+      {
+        userId: "swarmdaq",
+        agentId: params.agentId,
+        runId: params.runId,
+        metadata: params.metadata ?? {},
+      }
+    );
+    return true;
+  } catch (err) {
+    warnOnce(`mem0-add-${params.agentId}`, `[mem0] add failed: ${(err as Error).message}`);
+    return false;
+  }
 }
 
 export async function searchAgentMemory(params: {
@@ -87,18 +77,23 @@ export async function searchAgentMemory(params: {
   query: string;
   limit?: number;
 }): Promise<Mem0Memory[]> {
-  if (!MEM0_API_KEY) return [];
-  const result = await mem0Fetch<{ results?: Mem0Memory[] }>("/memories/search/", {
-    method: "POST",
-    body: JSON.stringify({
-      query: params.query,
-      user_id: "swarmdaq",
-      agent_id: params.agentId,
-      run_id: params.runId,
-      limit: params.limit ?? 10,
-    }),
-  });
-  return result?.results ?? [];
+  const client = getClient();
+  if (!client) return [];
+  try {
+    const results = await client.search(params.query, {
+      filters: {
+        userId: "swarmdaq",
+        agentId: params.agentId,
+        ...(params.runId ? { runId: params.runId } : {}),
+      },
+      topK: params.limit ?? 10,
+    });
+    const arr = Array.isArray(results) ? results : (results as { results?: unknown[] }).results ?? [];
+    return arr as Mem0Memory[];
+  } catch (err) {
+    warnOnce(`mem0-search-${params.agentId}`, `[mem0] search failed: ${(err as Error).message}`);
+    return [];
+  }
 }
 
 export async function getAgentContext(agentId: string, topic: string): Promise<string> {
