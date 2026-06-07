@@ -6,9 +6,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { useCopilotReadable } from "@copilotkit/react-core";
 import type { MissionResult, Agent, AgentBid, ReputationChange, ShapleyContribution, AgentMessage, MarketDecisionEntry, StreamEvent, EvalScore, DeliberationEntry, DeliberationRevision } from "@/lib/types";
-import { AGENT_PROVIDER, PROVIDER_COLORS } from "@/lib/providers-config";
 import type { TraceSummary } from "@/app/api/traces/route";
 import { getAgentLabel } from "@/components/copilot/WeakAgentCard";
+import { AgentProviderBadge } from "@/components/AgentProviderBadge";
 import type { MissionSummary, MarketFeedEvent, MissionEvent } from "@/lib/marketHistory";
 import type { MarketIntelligenceResponse } from "@/app/api/market/intelligence/route";
 
@@ -262,12 +262,7 @@ function AgentCard({ agent, bid, delay = 0, isActive = false, onClick }: { agent
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />
           <span className="text-xs font-bold text-slate-200">{agent.name}</span>
-          {agent.provider && (() => {
-            const isSystem = ["market_maker", "evaluator", "reputation", "planner"].includes(agent.id);
-            const pColor = isSystem ? "#475569" : agent.provider === "anthropic" ? "#f97316" : agent.provider === "openai" ? "#00ff88" : "#00aaff";
-            const pLabel = isSystem ? "System" : agent.provider === "anthropic" ? "Anthropic" : agent.provider === "openai" ? "GPT-5.5" : "Google";
-            return <span className="text-xs font-mono px-1 rounded" style={{ color: pColor, backgroundColor: `${pColor}15`, border: `1px solid ${pColor}40` }}>{pLabel}</span>;
-          })()}
+          <AgentProviderBadge agentName={agent.name} />
         </div>
         <span className="text-xs font-mono" style={{ color }}>{STATUS_LABEL[agent.status]}</span>
       </div>
@@ -296,8 +291,9 @@ function Leaderboard({ agents }: { agents: Agent[] }) {
         <div key={a.id} className="flex items-center gap-2 text-xs font-mono">
           <span className="text-slate-700 w-4">{i + 1}</span>
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_COLOR[a.status] ?? "#475569" }} />
-          <span className="flex-1 text-slate-400 truncate">{a.name}</span>
-          <div className="flex items-center gap-1">
+          <span className="text-slate-400 truncate">{a.name}</span>
+          <AgentProviderBadge agentName={a.name} />
+          <div className="flex items-center gap-1 ml-auto">
             <div className="h-1 rounded" style={{ width: `${(a.reputation / 100) * 60}px`, backgroundColor: a.reputation > 85 ? "#00ff88" : a.reputation > 70 ? "#fbbf24" : "#ef4444", opacity: 0.7 }} />
             <span className="text-slate-300 w-6 text-right">{a.reputation}</span>
           </div>
@@ -635,8 +631,6 @@ function OutputPanel({ result, onRunAgain, loading }: {
   const workerAgents = result.selectedAgents?.filter(
     (a) => !["market_maker", "evaluator", "reputation", "planner"].includes(a.id)
   ) ?? [];
-  const providerColors: Record<string, string> = { openai: "#00ff88", anthropic: "#f97316", gemini: "#00aaff" };
-  const providerLabels: Record<string, string> = { openai: "GPT-5.5", anthropic: "Anthropic", gemini: "Google" };
 
   return (
     <div>
@@ -646,16 +640,9 @@ function OutputPanel({ result, onRunAgain, loading }: {
 
         {/* Provider participation badges */}
         <div className="flex items-center gap-1.5 flex-1">
-          {workerAgents.map((a) => {
-            const pColor = providerColors[a.provider ?? "gemini"] ?? "#475569";
-            const pLabel = providerLabels[a.provider ?? "gemini"] ?? a.provider;
-            return (
-              <span key={a.id} className="text-xs font-mono px-1.5 py-0.5 rounded"
-                style={{ color: pColor, backgroundColor: `${pColor}12`, border: `1px solid ${pColor}30` }}>
-                {pLabel}
-              </span>
-            );
-          })}
+          {workerAgents.map((a) => (
+            <AgentProviderBadge key={a.id} agentName={a.name} />
+          ))}
           {workerAgents.length > 0 && (
             <span className="text-xs font-mono text-slate-700">{workerAgents.length}/3</span>
           )}
@@ -921,7 +908,7 @@ function MarketDecisionLog({ log }: { log: MarketDecisionEntry[] }) {
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-4 text-slate-700 flex-shrink-0">{i + 1}.</span>
                     <span className={`break-words ${i === 0 ? "text-green-400 font-bold" : "text-slate-500"}`}>{c.agentName}</span>
-                    {(() => { const p = AGENT_PROVIDER[c.agentId]; const isSystem = ["market_maker", "evaluator", "reputation", "planner"].includes(c.agentId); if (!p || isSystem) return null; return <span className="text-xs px-1 rounded" style={{ color: PROVIDER_COLORS[p], backgroundColor: `${PROVIDER_COLORS[p]}18`, border: `1px solid ${PROVIDER_COLORS[p]}40` }}>{p === "anthropic" ? "Anthropic" : p === "openai" ? "OpenAI" : "Google"}</span>; })()}
+                    <AgentProviderBadge agentName={c.agentName} />
                     <span className="ml-auto font-bold" style={{ color: i === 0 ? "#00ff88" : "#475569" }}>{c.compositeScore.toFixed(4)}</span>
                   </div>
                   <div className="flex gap-3 pl-6 text-slate-800">

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { AgentProviderBadge } from "@/components/AgentProviderBadge";
 
 interface LeaderboardEntry {
   rank: number;
@@ -143,6 +144,7 @@ export default function LeaderboardPage() {
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: lc }} />
                         <span className="text-sm font-bold text-slate-200 truncate">{e.name}</span>
+                        <AgentProviderBadge agentName={e.name} />
                         {e.runs > 0 && (
                           <span className="text-xs text-slate-700 flex-shrink-0">{e.runs}r</span>
                         )}
