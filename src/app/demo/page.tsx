@@ -78,9 +78,159 @@ function toBullets(text: string, max = 5): string[] {
   return clean.split(/\.\s+/).filter((s) => s.trim().length > 12).slice(0, max).map((s) => s.trim() + (s.trim().endsWith(".") ? "" : "."));
 }
 
+// ── Agent Price Index ─────────────────────────────────────────────────────────
+
+function computePriceIndex(agent: Agent): number {
+  const repN = agent.reputation / 100;
+  const eloN = Math.min(1, Math.max(0, (agent.elo - 1200) / 500));
+  const qualityScore =
+    0.30 * repN +
+    0.25 * agent.factuality +
+    0.20 * agent.bayesianMean +
+    0.15 * eloN +
+    0.10 * agent.meanReward;
+  const uncertaintyPenalty = 1 - Math.min(0.35, agent.uncertainty * 2.5);
+  return Math.max(10, Math.min(250, Math.round(150 * qualityScore * uncertaintyPenalty)));
+}
+
+type AgentSignal = "BUY" | "HOLD" | "SELL" | "WATCH";
+const SIGNAL_COLORS: Record<AgentSignal, string> = {
+  BUY: "#00ff88", HOLD: "#fbbf24", SELL: "#ef4444", WATCH: "#00aaff",
+};
+
+function computeSignal(agent: Agent): AgentSignal {
+  const winRate = agent.runs > 0 ? agent.wins / agent.runs : 0;
+  if (agent.runs < 3 || agent.uncertainty > 0.18) return "WATCH";
+  if (agent.bayesianMean > 0.78 && agent.uncertainty < 0.10 && winRate > 0.70 && agent.factuality > 0.82) return "BUY";
+  if (agent.factuality < 0.68 || agent.reputation < 75 || winRate < 0.40) return "SELL";
+  return "HOLD";
+}
+
+interface PriceProjection { bear: number[]; base: number[]; bull: number[] }
+
+function generateProjection(agent: Agent): PriceProjection {
+  const current = computePriceIndex(agent);
+  const winRate = agent.runs > 0 ? agent.wins / agent.runs : 0.5;
+  const bearR = -0.025 * (1 - winRate) - 0.005;
+  const baseR = 0.012 * (agent.bayesianMean - 0.5) + 0.004 * (winRate - 0.5);
+  const bullR = 0.028 * winRate + 0.008;
+  const damping = 0.82;
+  const project = (r: number) => {
+    const pts = [current];
+    for (let i = 1; i <= 5; i++) {
+      const dr = r * Math.pow(damping, i - 1);
+      pts.push(Math.max(10, Math.min(250, pts[i - 1] * (1 + dr))));
+    }
+    return pts;
+  };
+  return { bear: project(bearR), base: project(baseR), bull: project(bullR) };
+}
+
+function PriceChart({ projection }: { projection: PriceProjection }) {
+  const W = 420, H = 120, PL = 40, PR = 10, PT = 8, PB = 26;
+  const all = [...projection.bear, ...projection.base, ...projection.bull];
+  const rawMin = Math.min(...all), rawMax = Math.max(...all);
+  const pad = (rawMax - rawMin) * 0.12 || 3;
+  const minY = rawMin - pad, maxY = rawMax + pad, range = maxY - minY || 1;
+  const cx = (i: number) => PL + (i / 5) * (W - PL - PR);
+  const cy = (v: number) => PT + (1 - (v - minY) / range) * (H - PT - PB);
+  const pts = (arr: number[]) => arr.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
+  const areaTop = projection.bull.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
+  const areaBot = [...projection.bear].reverse().map((v, i, a) => `${cx(a.length - 1 - i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
+  const yTicks = [0.15, 0.5, 0.85].map((f) => minY + f * range);
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: "visible" }}>
+      <polygon points={`${areaTop} ${areaBot}`} fill="rgba(148,163,184,0.05)" />
+      {yTicks.map((v, i) => <line key={i} x1={PL} y1={cy(v)} x2={W - PR} y2={cy(v)} stroke="#1e293b" strokeWidth="0.5" />)}
+      <polyline points={pts(projection.bear)} fill="none" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.6" />
+      <polyline points={pts(projection.bull)} fill="none" stroke="#00ff88" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.6" />
+      <polyline points={pts(projection.base)} fill="none" stroke="#94a3b8" strokeWidth="2" />
+      <circle cx={cx(0)} cy={cy(projection.base[0])} r="3.5" fill="#94a3b8" />
+      <circle cx={cx(5)} cy={cy(projection.bear[5])} r="2.5" fill="#ef4444" opacity="0.8" />
+      <circle cx={cx(5)} cy={cy(projection.base[5])} r="2.5" fill="#94a3b8" />
+      <circle cx={cx(5)} cy={cy(projection.bull[5])} r="2.5" fill="#00ff88" opacity="0.8" />
+      {yTicks.map((v, i) => (
+        <text key={i} x={PL - 5} y={cy(v) + 4} textAnchor="end" fill="#475569" fontSize="9" fontFamily="ui-monospace,monospace">{Math.round(v)}</text>
+      ))}
+      {["Now", "+1", "+2", "+3", "+4", "+5"].map((label, i) => (
+        <text key={i} x={cx(i)} y={H - 4} textAnchor="middle" fill="#475569" fontSize="9" fontFamily="ui-monospace,monospace">{label}</text>
+      ))}
+      <line x1={PL} y1={H - PB} x2={W - PR} y2={H - PB} stroke="#1e293b" strokeWidth="0.5" />
+    </svg>
+  );
+}
+
+function AgentMarketDetail({ agent, repDelta, onClose }: { agent: Agent; repDelta?: number; onClose: () => void }) {
+  const price = computePriceIndex(agent);
+  const signal = computeSignal(agent);
+  const projection = generateProjection(agent);
+  const signalColor = SIGNAL_COLORS[signal];
+  const winRate = agent.runs > 0 ? agent.wins / agent.runs : null;
+  const chars: Array<{ label: string; value: string; color?: string }> = [
+    { label: "Reputation", value: String(agent.reputation), color: agent.reputation > 85 ? "#00ff88" : agent.reputation > 70 ? "#fbbf24" : "#ef4444" },
+    { label: "Factuality", value: `${(agent.factuality * 100).toFixed(0)}%`, color: agent.factuality > 0.85 ? "#00ff88" : agent.factuality > 0.70 ? "#fbbf24" : "#ef4444" },
+    { label: "ELO", value: String(Math.round(agent.elo)), color: "#94a3b8" },
+    { label: "Bayesian Trust", value: `${(agent.bayesianMean * 100).toFixed(0)}%`, color: "#00aaff" },
+    { label: "Uncertainty", value: `${(agent.uncertainty * 100).toFixed(0)}%`, color: agent.uncertainty < 0.10 ? "#00ff88" : agent.uncertainty < 0.18 ? "#fbbf24" : "#ef4444" },
+    { label: "Recent Δ Rep", value: repDelta !== undefined ? (repDelta > 0 ? `+${repDelta}` : `${repDelta}`) : "—", color: repDelta && repDelta > 0 ? "#00ff88" : repDelta && repDelta < 0 ? "#ef4444" : "#64748b" },
+    { label: "Win Rate", value: winRate !== null ? `${(winRate * 100).toFixed(0)}%` : "—", color: winRate !== null && winRate > 0.70 ? "#00ff88" : winRate !== null && winRate > 0.40 ? "#fbbf24" : "#ef4444" },
+    { label: "Cost / Task", value: `$${agent.price.toFixed(3)}`, color: "#94a3b8" },
+    { label: "Latency Avg", value: `${agent.latencyAvg.toFixed(1)}s`, color: "#94a3b8" },
+  ];
+  return (
+    <div className="terminal-card p-4">
+      <div className="flex items-start gap-3 mb-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-bold text-slate-200">{agent.name}</span>
+            <span className="text-xs font-bold font-mono px-2 py-0.5 rounded border"
+              style={{ color: signalColor, borderColor: `${signalColor}40`, backgroundColor: `${signalColor}10` }}>
+              {signal}
+            </span>
+          </div>
+          <div className="text-xs text-slate-600 mt-0.5 truncate">{agent.role}</div>
+        </div>
+        <div className="text-right flex-shrink-0">
+          <div className="text-2xl font-black font-mono" style={{ color: signalColor }}>{price}</div>
+          <div className="text-xs text-slate-700 font-mono">Price Index</div>
+        </div>
+        <button onClick={onClose} className="text-slate-700 hover:text-slate-400 transition-colors text-sm leading-none flex-shrink-0">✕</button>
+      </div>
+      <PriceChart projection={projection} />
+      <div className="flex items-center gap-4 mt-2 mb-3 text-xs font-mono flex-wrap">
+        <span className="flex items-center gap-1.5 text-red-400/70">
+          <svg width="16" height="4"><line x1="0" y1="2" x2="16" y2="2" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="3 2" /></svg>
+          Bear {Math.round(projection.bear[5])}
+        </span>
+        <span className="flex items-center gap-1.5 text-slate-500">
+          <svg width="16" height="4"><line x1="0" y1="2" x2="16" y2="2" stroke="#94a3b8" strokeWidth="2" /></svg>
+          Base {Math.round(projection.base[5])}
+        </span>
+        <span className="flex items-center gap-1.5 text-green-400/70">
+          <svg width="16" height="4"><line x1="0" y1="2" x2="16" y2="2" stroke="#00ff88" strokeWidth="1.5" strokeDasharray="3 2" /></svg>
+          Bull {Math.round(projection.bull[5])}
+        </span>
+        <span className="ml-auto text-slate-800">projected next 5 runs</span>
+      </div>
+      <div className="border-t border-slate-900 pt-3">
+        <div className="card-heading mb-2">Characteristics</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-xs font-mono">
+          {chars.map(({ label, value, color }) => (
+            <div key={label} className="flex justify-between gap-2">
+              <span className="text-slate-700">{label}</span>
+              <span style={{ color: color ?? "#94a3b8" }}>{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 text-xs text-slate-800 font-mono">Not a tradable asset — internal routing intelligence</div>
+    </div>
+  );
+}
+
 // ── Components ───────────────────────────────────────────────────────────────
 
-function AgentCard({ agent, bid, delay = 0, isActive = false }: { agent: Agent; bid?: AgentBid; delay?: number; isActive?: boolean }) {
+function AgentCard({ agent, bid, delay = 0, isActive = false, onClick }: { agent: Agent; bid?: AgentBid; delay?: number; isActive?: boolean; onClick?: () => void }) {
   const color = STATUS_COLOR[agent.status] ?? "#475569";
   const isRunning = agent.status === "running";
   const isSelected = ["selected", "running", "done", "promoted", "penalized"].includes(agent.status);
@@ -89,11 +239,13 @@ function AgentCard({ agent, bid, delay = 0, isActive = false }: { agent: Agent; 
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.35 }}
+      onClick={onClick}
       className={`p-3 rounded border transition-all ${isRunning ? "agent-running" : ""}`}
       style={{
         borderColor: isActive ? "#00ff88" : isSelected ? `${color}60` : "#1e293b",
         backgroundColor: isActive ? "rgba(0,255,136,0.06)" : isSelected ? `${color}08` : "#050505",
         boxShadow: isActive ? "0 0 12px rgba(0,255,136,0.15)" : undefined,
+        cursor: onClick ? "pointer" : undefined,
       }}
     >
       <div className="flex items-start justify-between mb-2">
@@ -1147,6 +1299,7 @@ export default function DemoPage() {
   const [deliberationDone, setDeliberationDone] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const [judgeMode, setJudgeMode] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   const deleteCustomAgent = async (agentId: string) => {
     try {
@@ -1569,7 +1722,13 @@ export default function DemoPage() {
               <div className="space-y-2.5 flex-1 overflow-y-auto">
                 {liveAgents.map((agent, i) => (
                   <div key={agent.id} className="relative group">
-                    <AgentCard agent={agent} bid={bidsByAgent[agent.id]} delay={i * 0.04} isActive={activeAgent === agent.id} />
+                    <AgentCard
+                      agent={agent}
+                      bid={bidsByAgent[agent.id]}
+                      delay={i * 0.04}
+                      isActive={activeAgent === agent.id}
+                      onClick={() => setSelectedAgentId((prev) => prev === agent.id ? null : agent.id)}
+                    />
                     {agent.id.startsWith("custom_") && (
                       <button
                         onClick={() => void deleteCustomAgent(agent.id)}
@@ -1581,11 +1740,28 @@ export default function DemoPage() {
                   </div>
                 ))}
               </div>
+              {liveAgents.length > 0 && !selectedAgentId && (
+                <div className="mt-2 text-xs font-mono text-slate-800 text-center">click agent to inspect</div>
+              )}
             </div>
           </div>
 
           {/* Center: auction + messages + output + math */}
           <div className="order-first lg:order-none flex-1 min-w-0 flex flex-col gap-4">
+            {/* Agent Market Detail — shown when user clicks an agent in the left rail */}
+            <AnimatePresence>
+              {selectedAgentId && (() => {
+                const inspectedAgent = liveAgents.find((a) => a.id === selectedAgentId);
+                if (!inspectedAgent) return null;
+                const repDelta = liveRepChanges.find((c) => c.agentId === selectedAgentId)?.delta;
+                return (
+                  <motion.div key={selectedAgentId} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
+                    <AgentMarketDetail agent={inspectedAgent} repDelta={repDelta} onClose={() => setSelectedAgentId(null)} />
+                  </motion.div>
+                );
+              })()}
+            </AnimatePresence>
+
             {liveBids.length > 0 && (
               <div className="terminal-card p-4">
                 <div className="card-heading mb-3">⚖️ Agent Auction — Vickrey-Inspired</div>
