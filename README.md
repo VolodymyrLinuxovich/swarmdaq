@@ -22,6 +22,7 @@
 **Theme:** Agent performance, tracing, evaluation, and self-improving AI systems  
 **Built with:** Gemini · W&B Weave · Redis · Next.js · Vercel  
 **Live demo:** [SwarmDAQ on Vercel](https://swarmdaq.vercel.app)  
+**Pitch deck:** [swarmdaq.vercel.app/pitchdeck](https://swarmdaq.vercel.app/pitchdeck)  
 **Research paper:** [Have a look at algorithm](https://drive.google.com/file/d/1cHo8WRfU770hLJOCY5Vz5xp70GWxgqH-/view?usp=sharing)
 
 **Team:** Volodymyr Borysenko  
@@ -47,6 +48,35 @@ Most orchestration systems assign work manually, sequentially, or randomly. They
 It treats agents like market participants.
 
 Agents bid on tasks. A MarketMaker selects the optimal swarm. An EvaluatorAgent scores outputs. Reputation updates after every mission. The next run uses the learned market state to build a better swarm.
+
+---
+
+## Pitch Deck
+
+Investor / hackathon deck (10 slides, keyboard navigation):
+
+**Live:** [swarmdaq.vercel.app/pitchdeck](https://swarmdaq.vercel.app/pitchdeck)
+
+| File | Purpose |
+|------|---------|
+| `pitchdeck/slides.html` | Source deck (edit here) |
+| `public/pitchdeck/index.html` | Deployed copy served by Next.js / Vercel |
+| `pitchdeck/generate.py` | Optional PPTX generator |
+| `pitchdeck/*.pptx` | PowerPoint exports |
+
+Preview locally:
+
+```bash
+python3 -m http.server 8765 --directory pitchdeck
+# open http://localhost:8765/slides.html
+```
+
+After editing, sync and redeploy:
+
+```bash
+cp pitchdeck/slides.html public/pitchdeck/index.html
+vercel --prod --yes
+```
 
 ---
 
@@ -598,6 +628,11 @@ swarmdaq/
 │       ├── orchestrator.ts       # Core mission + market loop
 │       ├── trace.ts
 │       └── types.ts
+├── pitchdeck/
+│   ├── slides.html              # HTML pitch deck source
+│   └── generate.py              # Optional PPTX export
+├── public/pitchdeck/
+│   └── index.html               # Deployed deck at /pitchdeck
 ├── vitest.config.ts
 ├── .env.example
 ├── next.config.ts
