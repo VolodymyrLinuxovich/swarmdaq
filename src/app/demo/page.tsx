@@ -12,7 +12,7 @@ import type { MissionSummary, MarketFeedEvent, MissionEvent } from "@/lib/market
 import type { MarketIntelligenceResponse } from "@/app/api/market/intelligence/route";
 
 const DEFAULT_MISSION =
-  "Build a launch plan for an AI product that helps students turn messy research into a demo-ready hackathon project. Include market positioning, landing page copy, risk analysis, and a 90-second pitch.";
+  "Route this mission through the SwarmDAQ agent market: build a demo-ready hackathon launch plan for a student AI product. Show every auction decision, agent failure, evaluator score, and reputation update. Deliver a concise final launch artifact.";
 
 const STATUS_COLOR: Record<string, string> = {
   idle: "#475569", bidding: "#fbbf24", selected: "#00aaff",
@@ -57,6 +57,25 @@ const MSG_COLORS: Record<AgentMessage["type"], string> = {
 const MSG_ICONS: Record<AgentMessage["type"], string> = {
   info: "→", flag: "⚠", confirm: "✓", synergy: "⚡", penalty: "↓",
 };
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/^---+$/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^\s*[-•]\s+/gm, "• ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function toBullets(text: string, max = 5): string[] {
+  const clean = stripMarkdown(text);
+  const lines = clean.split("\n").map((l) => l.replace(/^[•\-*]\s*/, "").trim()).filter((l) => l.length > 12);
+  if (lines.length >= 2) return lines.slice(0, max);
+  return clean.split(/\.\s+/).filter((s) => s.trim().length > 12).slice(0, max).map((s) => s.trim() + (s.trim().endsWith(".") ? "" : "."));
+}
 
 // ── Components ───────────────────────────────────────────────────────────────
 
@@ -328,13 +347,6 @@ function MathPanel({ snapshot, showMath }: { snapshot: MissionResult["mathSnapsh
   );
 }
 
-function renderMarkdownLite(text: string) {
-  return text.split("\n").map((line, i) => {
-    const boldLine = line.replace(/\*\*(.*?)\*\*/g, (_m, t) => `<strong class="text-slate-200">${t}</strong>`);
-    return <p key={i} className={line.trim() === "" ? "mt-2" : "leading-relaxed"} dangerouslySetInnerHTML={{ __html: boldLine || "&nbsp;" }} />;
-  });
-}
-
 function PitchSegment({ text }: { text: string }) {
   const segments = text.split(/(\[\d+-?\d*s\])/).filter(Boolean);
   const parts: Array<{ time: string | null; body: string }> = [];
@@ -365,17 +377,17 @@ function PitchSegment({ text }: { text: string }) {
 }
 
 function RiskCard({ text }: { text: string }) {
-  const lines = text.split("\n").filter(Boolean);
+  const lines = toBullets(text, 6);
   return (
     <div className="space-y-2">
       {lines.map((line, i) => {
-        const isCritical = line.includes("Critical") || line.includes("High");
+        const isCritical = /critical|high|major/i.test(line);
         const color = isCritical ? "#ef4444" : "#fbbf24";
         return (
           <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.06 }}
             className="p-3 rounded border text-xs font-mono leading-relaxed"
             style={{ borderColor: `${color}25`, backgroundColor: `${color}05` }}>
-            <span dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.*?)\*\*/g, `<strong style="color:${color}">$1</strong>`) }} />
+            <span style={{ color: "#94a3b8" }}>{line}</span>
           </motion.div>
         );
       })}
@@ -412,7 +424,17 @@ function OutputPanel({ result }: { result: MissionResult }) {
       </div>
       <div className="max-h-72 overflow-y-auto pr-1">
         {tab === "pitch" && <PitchSegment text={result.output.pitch} />}
-        {tab === "positioning" && <div className="text-xs text-slate-400 leading-relaxed">{renderMarkdownLite(result.output.positioning)}</div>}
+        {tab === "positioning" && (
+          <div className="space-y-2">
+            {toBullets(result.output.positioning, 6).map((bullet, i) => (
+              <motion.div key={i} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
+                className="flex items-start gap-2 p-2 rounded border border-slate-900 bg-slate-950/40 text-xs font-mono text-slate-300">
+                <span className="text-green-500 flex-shrink-0 mt-0.5">▸</span>
+                <span className="leading-relaxed">{bullet}</span>
+              </motion.div>
+            ))}
+          </div>
+        )}
         {tab === "risks" && <RiskCard text={result.output.risks.join("\n")} />}
       </div>
     </div>
@@ -1121,6 +1143,7 @@ export default function DemoPage() {
   const [deliberationRevisions, setDeliberationRevisions] = useState<DeliberationRevision[]>([]);
   const [deliberationDone, setDeliberationDone] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
+  const [judgeMode, setJudgeMode] = useState(false);
 
   const deleteCustomAgent = async (agentId: string) => {
     try {
@@ -1413,6 +1436,12 @@ export default function DemoPage() {
             </div>
             <span className="hidden sm:inline text-slate-500">math</span>
           </div>
+          <div className="flex items-center gap-1.5 text-xs cursor-pointer select-none" onClick={() => setJudgeMode((v) => !v)}>
+            <div className="w-8 h-4 rounded-full border transition-colors" style={{ borderColor: judgeMode ? "#a855f7" : "#334155", backgroundColor: judgeMode ? "rgba(168,85,247,0.2)" : "transparent" }}>
+              <div className="w-3 h-3 rounded-full m-0.5 transition-transform" style={{ backgroundColor: judgeMode ? "#a855f7" : "#475569", transform: judgeMode ? "translateX(16px)" : "translateX(0)" }} />
+            </div>
+            <span className="hidden sm:inline text-slate-500">judge</span>
+          </div>
           <Link href="/leaderboard" className="hidden sm:inline text-xs text-slate-600 hover:text-slate-400 transition-colors">leaderboard</Link>
           <Link href="/benchmark" className="hidden md:inline text-xs text-slate-600 hover:text-slate-400 transition-colors">benchmarks</Link>
           <Link href="/architecture" className="hidden md:inline text-xs text-slate-600 hover:text-slate-400 transition-colors">architecture</Link>
@@ -1448,6 +1477,21 @@ export default function DemoPage() {
 
       {/* Live agent ticker */}
       <LiveTicker agents={liveAgents} reputationChanges={displayResult?.reputationChanges} />
+
+      {/* SwarmDAQ narrative banner */}
+      <div className="px-4 py-2 bg-black/80 border-b border-slate-900 flex items-center gap-3 overflow-x-auto">
+        <span className="text-xs font-mono text-slate-600 whitespace-nowrap">SwarmDAQ</span>
+        <span className="text-slate-800">·</span>
+        <span className="text-xs font-mono text-slate-700 whitespace-nowrap">Agents bid on tasks</span>
+        <span className="text-slate-800">→</span>
+        <span className="text-xs font-mono text-slate-700 whitespace-nowrap">MarketMaker routes using reputation + uncertainty</span>
+        <span className="text-slate-800">→</span>
+        <span className="text-xs font-mono text-slate-700 whitespace-nowrap">Evaluator scores output</span>
+        <span className="text-slate-800">→</span>
+        <span className="text-xs font-mono text-slate-700 whitespace-nowrap">ReputationAgent updates future routing</span>
+        <span className="text-slate-800">→</span>
+        <span className="text-xs font-mono text-green-700 whitespace-nowrap">Redis stores market memory</span>
+      </div>
 
       {/* Fast demo timeline — shown when fast demo has results */}
       {fastDemoResults.length > 0 && (
@@ -1569,7 +1613,7 @@ export default function DemoPage() {
             )}
 
             {/* Live agent output stream — shown while streaming, before final result */}
-            {!displayResult && Object.keys(streamOutputs).length > 0 && (
+            {!judgeMode && !displayResult && Object.keys(streamOutputs).length > 0 && (
               <div className="terminal-card p-4">
                 <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">
                   ⚡ Live Agent Outputs
@@ -1591,7 +1635,7 @@ export default function DemoPage() {
             )}
 
             {/* Agent message feed */}
-            {liveMessages.length > 0 && (
+            {!judgeMode && liveMessages.length > 0 && (
               <div className="terminal-card p-4">
                 <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">
                   💬 Agent Message Bus
@@ -1602,7 +1646,7 @@ export default function DemoPage() {
             )}
 
             {/* Deliberation feed */}
-            {(deliberationEntries.length > 0 || deliberationRevisions.length > 0) && (
+            {!judgeMode && (deliberationEntries.length > 0 || deliberationRevisions.length > 0) && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="terminal-card p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-xs text-slate-600 uppercase tracking-wider">⚖ Agent Deliberation</span>
@@ -1660,6 +1704,26 @@ export default function DemoPage() {
                 <MathPanel snapshot={displayResult.mathSnapshot} showMath={showMath} />
               </div>
             )}
+
+            {/* Why not a wrapper */}
+            <div className="terminal-card p-4">
+              <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">⚡ Why this is not a ChatGPT wrapper</div>
+              <div className="space-y-1.5">
+                {[
+                  { icon: "⚖️", text: "Agents compete for tasks before any generation happens" },
+                  { icon: "🧠", text: "MarketMaker routes using reputation + uncertainty, not random assignment" },
+                  { icon: "📊", text: "EvaluatorAgent scores output quality after every run" },
+                  { icon: "⭐", text: "ReputationAgent updates future routing based on results" },
+                  { icon: "💾", text: "Redis stores market memory — the next run is smarter" },
+                  { icon: "🔍", text: "Weave traces every mission event end-to-end" },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs font-mono">
+                    <span className="flex-shrink-0">{item.icon}</span>
+                    <span className="text-slate-500 leading-relaxed">{item.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {!displayResult && !loading && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="terminal-card p-5">
@@ -1795,8 +1859,21 @@ export default function DemoPage() {
                 <span className="text-xs font-mono text-green-700 ml-1">{totalMissions > 0 ? `${totalMissions} missions` : ""}</span>
                 <button onClick={() => void fetchMarketMemory()} className="ml-auto text-xs text-slate-700 hover:text-slate-500 transition-colors">↺</button>
               </div>
-              {marketFeed.length === 0 && totalMissions === 0 && (
+              {marketFeed.length === 0 && totalMissions === 0 && !displayResult && (
                 <div className="text-xs font-mono text-slate-800">no history yet — run a mission first</div>
+              )}
+              {displayResult && marketFeed.length === 0 && (
+                <div className="space-y-1.5 mb-3">
+                  <div className="text-xs font-mono text-green-700">● Run #{displayResult.runNumber} complete — score {displayResult.evalScore.overall}/100</div>
+                  {displayResult.reputationChanges.slice(0, 4).map((c) => (
+                    <div key={c.agentId} className="text-xs font-mono" style={{ color: c.delta > 0 ? "#00ff88" : c.delta < 0 ? "#ef4444" : "#64748b" }}>
+                      {c.delta > 0 ? "▲" : c.delta < 0 ? "▼" : "─"} {c.agentName} {c.delta > 0 ? `+${c.delta}` : c.delta} rep — {c.reason.slice(0, 55)}
+                    </div>
+                  ))}
+                  {displayResult.improvementFromPrevious && (
+                    <div className="text-xs font-mono text-slate-600 mt-1">{displayResult.improvementFromPrevious.message.slice(0, 80)}</div>
+                  )}
+                </div>
               )}
               {marketFeed.length > 0 && (
                 <div className="space-y-1.5 mb-3">
