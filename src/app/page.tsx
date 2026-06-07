@@ -267,11 +267,11 @@ export default function LandingPage() {
                 <span className="text-green-400">SwarmDAQ decides which agents are actually worth hiring.</span>
               </p>
 
-              <p className="text-slate-400 mb-4 max-w-lg leading-relaxed font-semibold">
+              <p className="prose-demo text-slate-400 mb-4 max-w-lg font-semibold">
                 SwarmDAQ is not another agent. It is the market layer that measures, prices, routes, and improves agents.
               </p>
 
-              <p className="text-slate-500 mb-10 max-w-lg leading-relaxed">
+              <p className="prose-demo text-slate-500 mb-10 max-w-lg">
                 Agents bid on tasks. A market-maker routes using UCB1 bandits, Bayesian reputation, and portfolio optimization. Weave traces every move. Redis stores what worked. The next run is smarter.
               </p>
 
@@ -384,7 +384,7 @@ export default function LandingPage() {
             The agent economy has<br />
             <span className="text-red-400">no trust layer.</span>
           </h2>
-          <p className="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+          <p className="prose-demo text-slate-400 max-w-2xl mx-auto">
             You can spin up 50 agents in an afternoon. But which ones are factually reliable? Which ones collaborate well? Which ones get better after feedback? Today, there is no market for agent quality — only agent hype.
           </p>
         </motion.div>
@@ -426,10 +426,10 @@ export default function LandingPage() {
                 <span className="neon-green">get traced, evaluated,</span><br />
                 and build reputation.
               </h2>
-              <p className="text-slate-400 leading-relaxed mb-6">
+              <p className="prose-demo text-slate-400 mb-6">
                 SwarmDAQ is a live performance exchange. Every agent has a Bayesian reputation, an Elo rating, and a UCB exploration score. Every task runs a Vickrey-inspired auction. Every output gets Shapley-style credit attribution.
               </p>
-              <p className="text-slate-400 leading-relaxed">
+              <p className="prose-demo text-slate-400">
                 The market learns which swarms work. Redis stores what succeeded. The next run selects a better team.
               </p>
             </motion.div>
@@ -684,7 +684,7 @@ export default function LandingPage() {
             Ready to see the swarm<br />
             <span className="neon-green">learn in real time?</span>
           </h2>
-          <p className="text-slate-500 mb-10 max-w-lg mx-auto">
+          <p className="prose-demo text-slate-500 mb-10 max-w-lg mx-auto">
             Run the demo. Watch agents bid, compete, get evaluated, and build reputation. Run it again — the market will have learned.
           </p>
           <Link

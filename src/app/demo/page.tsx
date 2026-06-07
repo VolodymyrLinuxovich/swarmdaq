@@ -183,10 +183,10 @@ function ScorePanel({ score, runNum, improvement, runCost, weaveTraceUrl }: {
   return (
     <div>
       <div className="flex items-baseline gap-3 mb-4">
-        <div className="text-4xl font-black" style={{ color: score.overall >= 90 ? "#00ff88" : score.overall >= 85 ? "#fbbf24" : "#ef4444" }}>
+        <div className="text-5xl font-black tracking-tight" style={{ color: score.overall >= 90 ? "#00ff88" : score.overall >= 85 ? "#fbbf24" : "#ef4444" }}>
           {score.overall}
         </div>
-        <div className="text-sm text-slate-500 font-mono">/ 100</div>
+        <div className="text-base text-slate-500 font-mono">/ 100</div>
         {runCost && (
           <div className="flex items-center gap-2 ml-1">
             <span className="text-xs font-mono text-amber-500/80">${runCost.totalUSD.toFixed(5)}</span>
@@ -370,7 +370,7 @@ function PitchSegment({ text }: { text: string }) {
           {p.time && (
             <span className="text-xs font-bold font-mono text-amber-500/80 flex-shrink-0 mt-0.5 w-14">{p.time}</span>
           )}
-          <p className="text-xs text-slate-300 leading-relaxed flex-1">{p.body.trim().replace(/^"/, "").replace(/"$/, "")}</p>
+          <p className="result-body flex-1" style={{ fontSize: "13px" }}>{p.body.trim().replace(/^"/, "").replace(/"$/, "")}</p>
         </motion.div>
       ))}
     </div>
@@ -403,35 +403,37 @@ function OutputPanel({ result }: { result: MissionResult }) {
   const runColor = result.runNumber >= 4 ? "#22d3ee" : result.runNumber === 3 ? "#ef4444" : result.runNumber === 2 ? "#00ff88" : "#fbbf24";
   return (
     <div>
-      {/* Landing headline — always visible */}
-      <div className="mb-4 p-3 rounded border bg-gradient-to-r from-slate-950 to-black"
+      {/* Landing headline */}
+      <div className="mb-5 p-4 rounded-xl border bg-gradient-to-r from-slate-950 to-black"
         style={{ borderColor: `${runColor}30` }}>
-        <div className="text-xs text-slate-600 font-mono mb-1 uppercase tracking-wider">Landing headline</div>
-        <div className="text-base font-bold leading-snug" style={{ color: runColor }}>{result.output.landingHeadline}</div>
+        <div className="card-heading mb-2">Landing headline — Run {result.runNumber}</div>
+        <div className="prose-demo font-semibold text-lg leading-snug" style={{ color: runColor }}>{result.output.landingHeadline}</div>
       </div>
 
-      <div className="flex gap-2 mb-3">
+      <div className="flex gap-2 mb-4">
         {(["pitch", "positioning", "risks"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className="px-3 py-1 text-xs font-mono rounded border transition-colors"
-            style={{ borderColor: tab === t ? "#00ff88" : "#1e293b", color: tab === t ? "#00ff88" : "#475569", backgroundColor: tab === t ? "rgba(0,255,136,0.05)" : "transparent" }}>
+          <button key={t} onClick={() => setTab(t)}
+            className="px-4 py-1.5 text-xs font-mono rounded-lg border transition-colors"
+            style={{ borderColor: tab === t ? "#00ff88" : "#1e293b", color: tab === t ? "#00ff88" : "#475569", backgroundColor: tab === t ? "rgba(0,255,136,0.07)" : "transparent" }}>
             {t}
           </button>
         ))}
         {tab === "pitch" && (
-          <button onClick={copyPitch} className="ml-auto px-3 py-1 text-xs font-mono rounded border border-slate-700 text-slate-400 hover:border-green-600 hover:text-green-400 transition-colors">
+          <button onClick={copyPitch}
+            className="ml-auto px-3 py-1.5 text-xs font-mono rounded-lg border border-slate-700 text-slate-400 hover:border-green-600 hover:text-green-400 transition-colors">
             {copied ? "✓ copied" : "copy"}
           </button>
         )}
       </div>
-      <div className="max-h-72 overflow-y-auto pr-1">
+      <div className="overflow-y-auto pr-1" style={{ maxHeight: "480px" }}>
         {tab === "pitch" && <PitchSegment text={result.output.pitch} />}
         {tab === "positioning" && (
-          <div className="space-y-2">
-            {toBullets(result.output.positioning, 6).map((bullet, i) => (
+          <div className="space-y-2.5">
+            {toBullets(result.output.positioning, 7).map((bullet, i) => (
               <motion.div key={i} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
-                className="flex items-start gap-2 p-2 rounded border border-slate-900 bg-slate-950/40 text-xs font-mono text-slate-300">
-                <span className="text-green-500 flex-shrink-0 mt-0.5">▸</span>
-                <span className="leading-relaxed">{bullet}</span>
+                className="flex items-start gap-3 p-3 rounded-xl border border-slate-900 bg-slate-950/40">
+                <span className="text-green-500 flex-shrink-0 mt-0.5 text-sm">▸</span>
+                <span className="result-body" style={{ fontSize: "13px" }}>{bullet}</span>
               </motion.div>
             ))}
           </div>
@@ -528,7 +530,7 @@ function MessageFeed({ messages }: { messages: AgentMessage[] }) {
             {msg.fromId.replace("_", "-")}
             {msg.toId !== "all" ? ` → ${msg.toId.replace("_", "-")}` : " → all"}:
           </span>
-          <span className="leading-relaxed" style={{ color: MSG_COLORS[msg.type] }}>{msg.message}</span>
+          <span className="leading-relaxed break-words min-w-0" style={{ color: MSG_COLORS[msg.type] }}>{msg.message}</span>
         </motion.div>
       ))}
       <div ref={endRef} />
@@ -550,7 +552,7 @@ function FastDemoTimeline({ results, selectedRun, onSelect }: {
         const isSelected = selectedRun === n;
         return (
           <button key={n} onClick={() => r && onSelect(r)} disabled={!r}
-            className="flex-1 p-2 rounded border text-center transition-all"
+            className="flex-1 p-3 rounded-xl border text-center transition-all"
             style={{ borderColor: isSelected ? color : r ? `${color}40` : "#1e293b", backgroundColor: isSelected ? `${color}12` : "transparent", cursor: r ? "pointer" : "default" }}>
             <div className="text-xs text-slate-600 font-mono mb-0.5">Run {n}</div>
             {r ? (
@@ -596,10 +598,10 @@ function MarketDecisionLog({ log }: { log: MarketDecisionEntry[] }) {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="px-3 pb-3 space-y-1.5 border-t border-slate-900">
               <div className="text-xs text-slate-700 pt-2 mb-2 uppercase tracking-wider">all candidates</div>
               {entry.candidates.map((c, i) => (
-                <div key={c.agentId} className="text-xs font-mono space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="w-4 text-slate-700">{i + 1}.</span>
-                    <span className={i === 0 ? "text-green-400 font-bold" : "text-slate-500"}>{c.agentName}</span>
+                <div key={c.agentId} className="text-xs font-mono space-y-0.5 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-4 text-slate-700 flex-shrink-0">{i + 1}.</span>
+                    <span className={`break-words ${i === 0 ? "text-green-400 font-bold" : "text-slate-500"}`}>{c.agentName}</span>
                     {(() => { const p = AGENT_PROVIDER[c.agentId]; return p && p !== "gemini" ? <span className="text-xs px-1 rounded" style={{ color: PROVIDER_COLORS[p], backgroundColor: `${PROVIDER_COLORS[p]}18`, border: `1px solid ${PROVIDER_COLORS[p]}40` }}>{p === "anthropic" ? "claude" : "gpt-4o"}</span> : null; })()}
                     <span className="ml-auto font-bold" style={{ color: i === 0 ? "#00ff88" : "#475569" }}>{c.compositeScore.toFixed(4)}</span>
                   </div>
@@ -1494,7 +1496,7 @@ export default function DemoPage() {
         </div>
       )}
 
-      <div className="p-4 space-y-4 max-w-screen-2xl mx-auto">
+      <div className="px-4 sm:px-6 py-5 max-w-[1500px] mx-auto space-y-5">
         {/* Mission input */}
         <div className="terminal-card p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -1509,8 +1511,8 @@ export default function DemoPage() {
               </div>
             )}
           </div>
-          <textarea value={mission} onChange={(e) => setMission(e.target.value)} rows={3}
-            className="w-full bg-transparent text-base sm:text-sm text-slate-300 resize-none outline-none placeholder-slate-700 leading-relaxed"
+          <textarea value={mission} onChange={(e) => setMission(e.target.value)} rows={4}
+            className="w-full bg-transparent text-sm text-slate-300 resize-none outline-none placeholder-slate-700 leading-relaxed prose-demo"
             placeholder="Enter your mission..." />
           <div className="mt-3 p-3 rounded border border-slate-800 bg-slate-950/60 text-xs font-mono space-y-1.5">
             {[
@@ -1551,9 +1553,9 @@ export default function DemoPage() {
         )}
 
         {/* Main grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-start gap-5">
           {/* Left: Agent cards */}
-          <div className="md:col-span-1 lg:col-span-1">
+          <div className="order-2 lg:order-none lg:w-[280px] lg:flex-shrink-0">
             <div className="terminal-card p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs text-slate-600 uppercase tracking-wider">Agent Registry</span>
@@ -1564,7 +1566,7 @@ export default function DemoPage() {
                   + Studio
                 </button>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {liveAgents.map((agent, i) => (
                   <div key={agent.id} className="relative group">
                     <AgentCard agent={agent} bid={bidsByAgent[agent.id]} delay={i * 0.04} isActive={activeAgent === agent.id} />
@@ -1583,17 +1585,17 @@ export default function DemoPage() {
           </div>
 
           {/* Center: auction + messages + output + math */}
-          <div className="md:col-span-1 lg:col-span-1 xl:col-span-2 space-y-4">
+          <div className="order-first lg:order-none flex-1 min-w-0 space-y-4">
             {liveBids.length > 0 && (
               <div className="terminal-card p-4">
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">⚖️ Agent Auction — Vickrey-Inspired</div>
+                <div className="card-heading mb-3">⚖️ Agent Auction — Vickrey-Inspired</div>
                 <AuctionLog bids={liveBids} />
               </div>
             )}
 
             {liveDecisionLog.length > 0 && (
               <div className="terminal-card p-4">
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">🧠 MarketMaker Decision Log</div>
+                <div className="card-heading mb-3">🧠 MarketMaker Decision Log</div>
                 <MarketDecisionLog log={liveDecisionLog} />
               </div>
             )}
@@ -1601,7 +1603,7 @@ export default function DemoPage() {
             {/* Live agent output stream — shown while streaming, before final result */}
             {!judgeMode && !displayResult && Object.keys(streamOutputs).length > 0 && (
               <div className="terminal-card p-4">
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">
+                <div className="card-heading mb-3">
                   ⚡ Live Agent Outputs
                   {activeAgent && (
                     <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.8, repeat: Infinity }}
@@ -1623,7 +1625,7 @@ export default function DemoPage() {
             {/* Agent message feed */}
             {!judgeMode && liveMessages.length > 0 && (
               <div className="terminal-card p-4">
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">
+                <div className="card-heading mb-3">
                   💬 Agent Message Bus
                   <span className="ml-2 text-slate-800">run #{displayResult?.runNumber ?? runCount}</span>
                 </div>
@@ -1656,7 +1658,7 @@ export default function DemoPage() {
 
             {displayResult && (
               <div className="terminal-card p-4" ref={outputRef}>
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">
+                <div className="card-heading mb-3">
                   📋 Final Output — Run #{displayResult.runNumber}
                 </div>
                 <OutputPanel result={displayResult} />
@@ -1686,14 +1688,14 @@ export default function DemoPage() {
 
             {displayResult && showMath && (
               <div className="terminal-card p-4">
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">🧮 Math Engine Snapshot</div>
+                <div className="card-heading mb-3">🧮 Math Engine Snapshot</div>
                 <MathPanel snapshot={displayResult.mathSnapshot} showMath={showMath} />
               </div>
             )}
 
             {/* Why not a wrapper */}
             <div className="terminal-card p-4">
-              <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">⚡ Why this is not a ChatGPT wrapper</div>
+              <div className="card-heading mb-3">⚡ Why this is not a ChatGPT wrapper</div>
               <div className="space-y-1.5">
                 {[
                   { icon: "⚖️", text: "Agents compete for tasks before any generation happens" },
@@ -1703,9 +1705,9 @@ export default function DemoPage() {
                   { icon: "💾", text: "Redis stores market memory — the next run is smarter" },
                   { icon: "🔍", text: "Weave traces every mission event end-to-end" },
                 ].map((item, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs font-mono">
-                    <span className="flex-shrink-0">{item.icon}</span>
-                    <span className="text-slate-500 leading-relaxed">{item.text}</span>
+                  <div key={i} className="flex items-start gap-2.5 py-1">
+                    <span className="flex-shrink-0 text-base">{item.icon}</span>
+                    <span className="prose-demo text-slate-400 leading-relaxed">{item.text}</span>
                   </div>
                 ))}
               </div>
@@ -1767,7 +1769,7 @@ export default function DemoPage() {
           </div>
 
           {/* Right: trust graph + leaderboard + eval + rep + shapley */}
-          <div className="md:col-span-2 lg:col-span-1 space-y-4">
+          <div className="order-3 lg:order-none lg:w-[340px] lg:flex-shrink-0 space-y-4">
             {/* Trust graph — always visible */}
             <div className="terminal-card p-4">
               <div className="text-xs text-slate-600 uppercase tracking-wider mb-2">
@@ -1791,27 +1793,27 @@ export default function DemoPage() {
             </div>
 
             <div className="terminal-card p-4">
-              <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">⭐ Reputation Leaderboard</div>
+              <div className="card-heading mb-3">⭐ Reputation Leaderboard</div>
               <Leaderboard agents={liveAgents} />
             </div>
 
             {liveScore && (
               <div className="terminal-card p-4">
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">📊 Eval Score</div>
+                <div className="card-heading mb-3">📊 Eval Score</div>
                 <ScorePanel score={liveScore} runNum={displayResult?.runNumber ?? runCount + 1} improvement={displayResult?.improvementFromPrevious} runCost={displayResult?.runCost} weaveTraceUrl={displayResult?.weaveTraceUrl} />
               </div>
             )}
 
             {liveRepChanges.length > 0 && (
               <div className="terminal-card p-4">
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">📈 Reputation Updates</div>
+                <div className="card-heading mb-3">📈 Reputation Updates</div>
                 <ReputationLog changes={liveRepChanges} />
               </div>
             )}
 
             {displayResult && (
               <div className="terminal-card p-4">
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">⚡ Contribution Ledger (Shapley)</div>
+                <div className="card-heading mb-3">⚡ Contribution Ledger (Shapley)</div>
                 <ContributionLedger contributions={displayResult.shapleyContributions} />
               </div>
             )}
@@ -1891,7 +1893,7 @@ export default function DemoPage() {
             {/* Mission Replay panel — shown when user selects a run */}
             {replayMission && replayMissionId && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="terminal-card p-4">
-                <div className="text-xs text-slate-600 uppercase tracking-wider mb-3">
+                <div className="card-heading mb-3">
                   ⏪ Replay — Run #{replayMission.runNumber}
                 </div>
                 <div className="grid grid-cols-3 gap-2 mb-3">
