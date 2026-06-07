@@ -265,7 +265,7 @@ function AgentCard({ agent, bid, delay = 0, isActive = false, onClick }: { agent
           {agent.provider && (() => {
             const isSystem = ["market_maker", "evaluator", "reputation", "planner"].includes(agent.id);
             const pColor = isSystem ? "#475569" : agent.provider === "anthropic" ? "#f97316" : agent.provider === "openai" ? "#00ff88" : "#00aaff";
-            const pLabel = isSystem ? "System" : agent.provider === "anthropic" ? "Anthropic" : agent.provider === "openai" ? "OpenAI" : "Google";
+            const pLabel = isSystem ? "System" : agent.provider === "anthropic" ? "Anthropic" : agent.provider === "openai" ? "GPT-5.5" : "Google";
             return <span className="text-xs font-mono px-1 rounded" style={{ color: pColor, backgroundColor: `${pColor}15`, border: `1px solid ${pColor}40` }}>{pLabel}</span>;
           })()}
         </div>
@@ -636,7 +636,7 @@ function OutputPanel({ result, onRunAgain, loading }: {
     (a) => !["market_maker", "evaluator", "reputation", "planner"].includes(a.id)
   ) ?? [];
   const providerColors: Record<string, string> = { openai: "#00ff88", anthropic: "#f97316", gemini: "#00aaff" };
-  const providerLabels: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Google" };
+  const providerLabels: Record<string, string> = { openai: "GPT-5.5", anthropic: "Anthropic", gemini: "Google" };
 
   return (
     <div>
@@ -1262,7 +1262,7 @@ const STUDIO_SKILLS = [
 
 const STUDIO_PROVIDERS: Array<{ value: "gemini" | "openai" | "anthropic"; label: string; color: string }> = [
   { value: "gemini", label: "Gemini 2.5 Flash", color: "#00aaff" },
-  { value: "openai", label: "GPT-4o", color: "#00ff88" },
+  { value: "openai", label: "GPT-5.5", color: "#00ff88" },
   { value: "anthropic", label: "Claude Sonnet", color: "#f97316" },
 ];
 

@@ -40,7 +40,7 @@ ${params.context ? `Context:\n${params.context}` : ""}
 Provide your expert analysis and output. Be specific with numbers, examples, and actionable recommendations.`;
 
   const response = await client.chat.completions.create({
-    model: "gpt-4o",
+    model: process.env.OPENAI_MODEL ?? "chat-latest",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user",   content: userPrompt },

@@ -13,7 +13,7 @@ export const AGENT_PROVIDER: Record<string, LLMProvider> = {
 
 export const PROVIDER_LABELS: Record<LLMProvider, string> = {
   gemini:    "Gemini 2.5 Flash",
-  openai:    "GPT-4o",
+  openai:    "GPT-5.5",
   anthropic: "Claude Sonnet",
 };
 
