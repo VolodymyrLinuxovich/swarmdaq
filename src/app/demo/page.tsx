@@ -1479,21 +1479,6 @@ export default function DemoPage() {
       {/* Live agent ticker */}
       <LiveTicker agents={liveAgents} reputationChanges={displayResult?.reputationChanges} />
 
-      {/* SwarmDAQ narrative banner */}
-      <div className="px-4 py-2 bg-black/80 border-b border-slate-900 flex items-center gap-3 overflow-x-auto">
-        <span className="text-xs font-mono text-slate-600 whitespace-nowrap">SwarmDAQ</span>
-        <span className="text-slate-800">·</span>
-        <span className="text-xs font-mono text-slate-700 whitespace-nowrap">Agents bid on tasks</span>
-        <span className="text-slate-800">→</span>
-        <span className="text-xs font-mono text-slate-700 whitespace-nowrap">MarketMaker routes using reputation + uncertainty</span>
-        <span className="text-slate-800">→</span>
-        <span className="text-xs font-mono text-slate-700 whitespace-nowrap">Evaluator scores output</span>
-        <span className="text-slate-800">→</span>
-        <span className="text-xs font-mono text-slate-700 whitespace-nowrap">ReputationAgent updates future routing</span>
-        <span className="text-slate-800">→</span>
-        <span className="text-xs font-mono text-green-700 whitespace-nowrap">Redis stores market memory</span>
-      </div>
-
       {/* Fast demo timeline — shown when fast demo has results */}
       {fastDemoResults.length > 0 && (
         <div className="px-4 py-3 border-b border-slate-900 bg-black/40">
