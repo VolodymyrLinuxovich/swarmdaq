@@ -222,7 +222,6 @@ export default function LandingPage() {
           <span className="text-sm font-bold tracking-widest neon-green">SWARMDAQ</span>
         </div>
         <div className="flex items-center gap-3 sm:gap-6">
-          <Link href="/architecture" className="hidden sm:inline text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Architecture</Link>
           <Link href="/benchmark" className="hidden sm:inline text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Benchmarks</Link>
           <Link href="/demo" className="hidden sm:inline text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Demo</Link>
           <Link
@@ -287,12 +286,6 @@ export default function LandingPage() {
                   className="hidden sm:inline-flex items-center px-8 py-4 border border-purple-500/60 text-purple-400 text-sm font-bold rounded hover:bg-purple-500/10 transition-all font-mono"
                 >
                   📊 Run Benchmarks
-                </Link>
-                <Link
-                  href="/architecture"
-                  className="hidden sm:inline-flex items-center px-8 py-4 border border-slate-700 text-slate-300 text-sm font-bold rounded hover:border-slate-500 transition-all font-mono"
-                >
-                  Architecture
                 </Link>
               </div>
 
