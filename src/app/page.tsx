@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, useInView } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 import { useCopilotReadable } from "@copilotkit/react-core";
 import { getAgentLabel } from "@/components/copilot/WeakAgentCard";
 import type { Agent } from "@/lib/types";
@@ -217,9 +218,9 @@ export default function LandingPage() {
     <div className="min-h-screen bg-black grid-bg">
       {/* Nav */}
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-black/80 backdrop-blur-sm border-b border-green-900/20">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-sm font-bold tracking-widest neon-green">SWARMDAQ</span>
+        <div className="flex items-center gap-2">
+          <Image src="/logo-256.png" alt="SwarmDAQ" width={160} height={160} className="h-10 w-auto" priority />
+          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
         </div>
         <div className="flex items-center gap-3 sm:gap-6">
           <Link href="/benchmark" className="hidden sm:inline text-xs text-slate-500 hover:text-green-400 transition-colors font-mono">Benchmarks</Link>

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 import { useCopilotReadable } from "@copilotkit/react-core";
 import type { MissionResult, Agent, AgentBid, ReputationChange, ShapleyContribution, AgentMessage, MarketDecisionEntry, StreamEvent, EvalScore, DeliberationEntry, DeliberationRevision } from "@/lib/types";
 import { AGENT_PROVIDER, PROVIDER_COLORS } from "@/lib/providers-config";
@@ -1412,7 +1413,7 @@ export default function DemoPage() {
       {/* Nav */}
       <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between px-4 py-3 bg-black/90 backdrop-blur-sm border-b border-green-900/20 gap-2">
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-xs neon-green font-black tracking-widest">SWARMDAQ</Link>
+          <Link href="/"><Image src="/logo-256.png" alt="SwarmDAQ" width={160} height={160} className="h-9 w-auto" /></Link>
           <div className="h-3 w-px bg-slate-700 hidden sm:block" />
           <span className="hidden sm:inline text-xs text-slate-600">live demo terminal</span>
         </div>
