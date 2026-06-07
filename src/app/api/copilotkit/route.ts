@@ -5,7 +5,9 @@ import {
   copilotRuntimeNextJSAppRouterEndpoint,
 } from "@copilotkit/runtime";
 
-const runtime = new CopilotRuntime();
+export const runtime = "nodejs";
+
+const copilotRuntime = new CopilotRuntime();
 
 export const POST = async (req: NextRequest) => {
   const geminiApiKey =
@@ -25,7 +27,7 @@ export const POST = async (req: NextRequest) => {
   }
 
   const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
-    runtime,
+    runtime: copilotRuntime,
     serviceAdapter: new GoogleGenerativeAIAdapter({
       model: "gemini-2.0-flash",
       apiKey: geminiApiKey,

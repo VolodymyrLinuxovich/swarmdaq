@@ -499,6 +499,53 @@ The UI is designed to make the market visible. You can watch agents compete, win
 
 ---
 
+## CopilotKit Generative UI
+
+SwarmDAQ includes a full CopilotKit command center accessible via the chat popup in the bottom-right corner.
+
+**Runtime endpoint:** `/api/copilotkit`
+
+Uses `GoogleGenerativeAIAdapter` with `gemini-2.0-flash`. Key is resolved server-side from:
+
+```
+GEMINI_API_KEY || GOOGLE_GENERATIVE_AI_API_KEY || GOOGLE_API_KEY
+```
+
+**Frontend tools** are registered in `src/components/SwarmCopilot.tsx`. Each tool calls a SwarmDAQ API and renders a custom card:
+
+| Tool | What it does |
+|---|---|
+| `runMission` | Runs a full agent market mission; renders `MissionResultCard` |
+| `inspectAgents` | Fetches live agent scores with BUY/HOLD/SELL/WATCH labels |
+| `explainMarketMaker` | Explains the composite score breakdown for the latest mission |
+| `findWeakAgent` | Identifies the weakest agent by Bayesian mean + uncertainty |
+| `rebalanceSwarm` | Suggests optimal swarm composition for quality/cost/speed/factuality |
+| `compareRuns` | Side-by-side score and swarm comparison between two run numbers |
+| `getMarketMemory` | Shows Redis-backed mission history and live feed events |
+| `getTraces` | Fetches W&B Weave trace timeline |
+| `replayMission` | Replays the event log for any past run |
+| `getAgentHistory` | Shows an agent's reputation and performance history |
+| `simulateAgentRemoval` | Predicts quality/factuality impact of removing an agent |
+| `showReputationChanges` | Shows rep deltas from the most recent run |
+| `explainRedisMemory` | Explains the Redis data schema and live memory contents |
+| `resetMarket` | Resets demo state and agent scores to baseline |
+
+**Example prompts:**
+
+```
+Run a mission for RocketRide
+Find the weakest agent
+Compare run 1 and run 4
+Show Redis memory
+Rebalance for factuality
+Explain why agents were selected last run
+Simulate removing SkepticAgent
+```
+
+**Security:** API key is server-side only. Never prefixed with `NEXT_PUBLIC_`. Never logged. Add to `.env.local` for local development and Vercel Environment Variables for production.
+
+---
+
 ## Demo Flow
 
 SwarmDAQ is built around a clear repeated-run demo.

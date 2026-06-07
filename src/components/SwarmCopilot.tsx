@@ -121,16 +121,37 @@ function computeRebalance(agents: Agent[], goal: string): RebalanceResult {
 function buildMarketMakerExplanation(log: MarketDecisionEntry[]): string {
   if (!log.length) return "No market decision log available. Run a mission first.";
 
-  const lines: string[] = [];
+  const lines: string[] = [
+    "MarketMaker composite score = weighted sum of 8 signals:\n" +
+    "  skillMatch · bayesianMean · UCB1 · graphTrust · Elo · utilityBid · cost penalty · uncertainty penalty\n",
+  ];
+
   for (const entry of log.slice(0, 4)) {
     const winner = entry.candidates[0];
     const loser = entry.candidates[1];
     if (!winner) continue;
     const winMargin = loser ? (winner.compositeScore - loser.compositeScore).toFixed(4) : "N/A";
-    const dominant = Object.entries({ skillMatch: winner.skillMatch, bayesianMean: winner.bayesianMean, ucb: winner.ucb, graphTrust: winner.graphTrust })
+    const factors: Record<string, number> = {
+      skillMatch: winner.skillMatch,
+      bayesianMean: winner.bayesianMean,
+      ucb: winner.ucbScore ?? winner.ucb ?? 0,
+      graphTrust: winner.graphTrust,
+      elo: winner.elo ?? 0,
+      utilityBid: winner.bidUtility ?? 0,
+      costPenalty: winner.costPenalty ?? 0,
+      uncertainty: winner.uncertaintyPenalty ?? 0,
+    };
+    const dominant = Object.entries(factors)
+      .filter(([k]) => !["costPenalty", "uncertainty"].includes(k))
       .sort(([, a], [, b]) => b - a)[0];
-    lines.push(`${entry.taskType.replace(/_/g, " ")}: ${entry.winnerName} won (Δ +${winMargin}). Dominant factor: ${dominant?.[0]} = ${dominant?.[1].toFixed(3)}.`);
-    if (loser) lines.push(`  Rejected: ${loser.agentName} (score ${loser.compositeScore.toFixed(4)}).`);
+    lines.push(
+      `${entry.taskType.replace(/_/g, " ")}: ${entry.winnerName} selected (score ${winner.compositeScore.toFixed(4)}, margin +${winMargin})\n` +
+      `  skill=${factors.skillMatch.toFixed(2)} bayes=${factors.bayesianMean.toFixed(2)} ucb=${factors.ucb.toFixed(3)} ` +
+      `trust=${factors.graphTrust.toFixed(2)} elo=${factors.elo.toFixed(2)} ` +
+      `utilityBid=${factors.utilityBid.toFixed(2)} cost-penalty=${factors.costPenalty.toFixed(3)} σ=${factors.uncertainty.toFixed(3)}\n` +
+      `  Dominant factor: ${dominant?.[0] ?? "skillMatch"} = ${dominant?.[1].toFixed(3)}\n` +
+      (loser ? `  Rejected: ${loser.agentName} (score ${loser.compositeScore.toFixed(4)})` : "")
+    );
   }
   return lines.join("\n");
 }
@@ -278,17 +299,39 @@ export function SwarmCopilot() {
     description: "Explain why each agent was selected (or rejected) in the last mission. Breaks down the composite score: UCB1, Bayesian reputation, Elo, graph trust, skill match, bid utility, cost, uncertainty.",
     parameters: [],
     handler: async () => {
-      const agentsRes = await fetch("/api/agents");
-      const { agents } = await agentsRes.json() as { agents: Agent[] };
-      return { agents };
+      const histRes = await fetch("/api/history?limit=1");
+      const { missions } = await histRes.json() as { missions: Array<{ missionId: string; runNumber: number }> };
+
+      if (!missions.length) {
+        return { log: [] as MarketDecisionEntry[], noMission: true };
+      }
+
+      const detailRes = await fetch(`/api/history/${missions[0].missionId}`);
+      const { mission } = await detailRes.json() as { mission: MissionResult };
+
+      return {
+        log: mission.marketDecisionLog ?? [],
+        selectedAgents: mission.selectedAgents,
+        mathSnapshot: mission.mathSnapshot,
+        runNumber: mission.runNumber,
+        score: mission.evalScore.overall,
+        noMission: false,
+      };
     },
-    render: ({ status, result }: { status: string; result?: { agents: Agent[]; log?: MarketDecisionEntry[] } }) => {
+    render: ({ status, result }: { status: string; result?: { log: MarketDecisionEntry[]; noMission?: boolean; runNumber?: number; score?: number } }) => {
       if (status !== "complete" || !result) {
         return <div style={{ fontFamily: "monospace", fontSize: 12, color: "#334155", padding: 12 }}>Analyzing market decisions...</div>;
       }
-      const demoLog: MarketDecisionEntry[] = result.log ?? [];
-      const explanation = buildMarketMakerExplanation(demoLog);
-      return <MarketMakerDecisionCard log={demoLog} explanation={explanation} />;
+      if (result.noMission || !result.log.length) {
+        return (
+          <div style={{ background: "#050505", border: "1px solid rgba(0,170,255,0.2)", borderRadius: 8, padding: 16, fontFamily: "monospace", fontSize: 12, color: "#475569" }}>
+            No mission data found. Run a mission first, then ask me to explain the MarketMaker decisions.
+          </div>
+        );
+      }
+      const explanation = buildMarketMakerExplanation(result.log);
+      const header = result.runNumber !== undefined ? `Run #${result.runNumber} — score ${result.score}/100` : undefined;
+      return <MarketMakerDecisionCard log={result.log} explanation={`${header ? header + "\n\n" : ""}${explanation}`} />;
     },
   });
 
@@ -686,7 +729,7 @@ export function SwarmCopilot() {
         <div style={{ background: "#050505", border: "1px solid rgba(0,170,255,0.2)", borderRadius: 8, padding: 16, fontFamily: "monospace", fontSize: 11, color: "#e0e0e0" }}>
           <div style={{ color: "#00aaff", fontWeight: 700, marginBottom: 10, fontSize: 13, letterSpacing: 1 }}>REDIS MARKET MEMORY SCHEMA</div>
           <div style={{ color: "#888", marginBottom: 12 }}>
-            Upstash Redis (HTTP REST, serverless-safe). Market feed: {result?.total ?? 0} recent events.
+            Redis Cloud (node-redis TCP). Market feed: {result?.total ?? 0} recent events.
           </div>
           {schema.map((s) => (
             <div key={s.key} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
