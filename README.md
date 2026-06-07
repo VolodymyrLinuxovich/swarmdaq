@@ -98,25 +98,79 @@ vercel --prod --yes
 
 ## Architecture at a Glance
 
+SwarmDAQ is a Next.js App Router app wrapped around a live agent-market backend. The demo UI, dashboard, and CopilotKit assistant all call the same mission and market-intelligence APIs, so the visible product reflects the same market state stored in Redis and traced through W&B Weave.
+
 ```mermaid
-flowchart TD
-    USER[User Mission] --> PLANNER[PlannerAgent]
-    PLANNER --> TASKS[Task Graph]
+flowchart LR
+    subgraph UI["Product Surface"]
+        DEMO["Demo / Results / Leaderboard"]
+        COPILOT["CopilotKit Assistant<br/>readable state + actions"]
+        DASH["Market Intelligence Panel"]
+    end
 
-    TASKS --> AUCTION[Agent Auction]
-    AUCTION --> MARKET[MarketMakerAgent]
+    subgraph API["Next.js API Routes"]
+        MISSION["/api/mission<br/>/api/mission/stream"]
+        INTEL["/api/market/intelligence"]
+        TRACES["/api/traces"]
+        FEED["/api/market-feed"]
+    end
 
-    MARKET --> SWARM[Selected Swarm]
-    SWARM --> EXEC[Gemini Agent Execution]
+    subgraph MARKET["Agent Market Core"]
+        PLANNER["PlannerAgent<br/>mission to task graph"]
+        AUCTION["Agent Auction<br/>bids + clearing prices"]
+        MAKER["MarketMakerAgent<br/>UCB + Bayes + Elo + graph trust + price anomaly"]
+        EXEC["Gemini Agent Execution"]
+        EVAL["EvaluatorAgent<br/>quality + factuality + collaboration"]
+        REP["ReputationAgent<br/>Bayes + Elo + uncertainty updates"]
+    end
 
-    EXEC --> WEAVE[W&B Weave Traces]
-    EXEC --> EVAL[EvaluatorAgent]
+    subgraph MEMORY["Market Memory"]
+        REDIS["Redis Cloud<br/>hashes + sorted sets + streams"]
+        TDIGEST["t-digest / rolling quantiles<br/>CDF + p-value + percentiles"]
+        MEM0["Mem0 Agent Memory"]
+        FALLBACK["In-memory fallback"]
+    end
 
-    EVAL --> REP[ReputationAgent]
-    REP --> MEMORY[Redis Reputation Memory]
+    subgraph OBS["Observability"]
+        WEAVE["W&B Weave Traces"]
+    end
 
-    MEMORY --> MARKET
+    DEMO --> MISSION
+    COPILOT --> MISSION
+    COPILOT --> INTEL
+    COPILOT --> TRACES
+    DASH --> INTEL
+    DASH --> FEED
+
+    MISSION --> PLANNER
+    PLANNER --> AUCTION
+    AUCTION --> MAKER
+    MAKER --> EXEC
+    EXEC --> EVAL
+    EVAL --> REP
+
+    AUCTION --> REDIS
+    AUCTION --> TDIGEST
+    MAKER --> TDIGEST
+    EXEC --> WEAVE
+    EVAL --> WEAVE
+    EVAL --> REDIS
+    EVAL --> TDIGEST
+    REP --> REDIS
+    REP --> MEM0
+
+    REDIS --> INTEL
+    TDIGEST --> INTEL
+    MEM0 --> MAKER
+    FALLBACK -. used when external services are missing .-> MISSION
+    TRACES --> WEAVE
 ```
+
+**Core loop:** mission -> task graph -> auction -> market-maker selection -> agent execution -> evaluation -> reputation update -> improved next routing.
+
+**Redis loop:** bids, clearing prices, evaluations, anomalies, leaderboards, and agent reputation snapshots are persisted as market memory. Price distributions use Redis t-digest when available and rolling quantile fallback when the provider does not support the module.
+
+**CopilotKit loop:** the assistant reads live SwarmDAQ state and calls product actions for missions, traces, run comparisons, market memory, and Redis anomaly explanations.
 
 ---
 
