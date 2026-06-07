@@ -10,6 +10,7 @@ export interface AnomalyContextInput {
   anomaly: PriceAnomalyResult;
   recentEvalScore?: number;
   taskComplexity: number;
+  mem0Context?: string;
 }
 
 export interface AnomalyContext {
@@ -84,6 +85,10 @@ export async function contextualizeMarketAnomaly(input: AnomalyContextInput): Pr
     return fallback;
   }
 
+  const mem0Section = input.mem0Context
+    ? `\nAgent memory context:\n${input.mem0Context}`
+    : "";
+
   const prompt = `Explain this SwarmDAQ market anomaly as strict JSON only.
 
 Task type: ${input.taskType}
@@ -97,7 +102,7 @@ Agent reputation: ${input.selectedAgent.reputation}
 Agent factuality: ${input.selectedAgent.factuality}
 Agent uncertainty: ${input.selectedAgent.uncertainty}
 Recent eval score: ${input.recentEvalScore ?? "unknown"}
-Task complexity: ${input.taskComplexity}
+Task complexity: ${input.taskComplexity}${mem0Section}
 
 Return:
 {

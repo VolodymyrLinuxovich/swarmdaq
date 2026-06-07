@@ -60,6 +60,7 @@ import {
   storeMarketAnomaly,
 } from "./market/price-anomaly";
 import { contextualizeMarketAnomaly } from "./market/anomaly-contextualizer";
+import { getAgentContext, saveAnomalyExplanationToMemory, saveRunSummaryToMemory } from "./memory/mem0";
 import { computeMarketMakerScore, type MarketScoreComponents } from "./market/scoring";
 
 // ── Seeded demo arc data (only used in SEEDED_DEMO mode) ─────────────────────
@@ -216,6 +217,7 @@ async function selectAgentForTask(
     const bid = bids.find((b) => b.agentId === s.agent.id);
     if (!bid?.priceAnomaly || ["NORMAL_PRICE", "INSUFFICIENT_HISTORY"].includes(bid.priceAnomaly.label)) continue;
     const clearingPrice = bid.clearingPrice ?? bid.cost;
+    const mem0Context = await getAgentContext(s.agent.id, task.type);
     const explanation = await contextualizeMarketAnomaly({
       taskType: task.type,
       selectedAgent: s.agent,
@@ -224,8 +226,19 @@ async function selectAgentForTask(
       anomaly: { ...bid.priceAnomaly, cdf: null },
       recentEvalScore,
       taskComplexity: complexity,
+      mem0Context: mem0Context || undefined,
     });
     bid.priceAnomaly.explanation = explanation;
+    await saveAnomalyExplanationToMemory({
+      agentId: s.agent.id,
+      runId: `run-${runNum}`,
+      missionId,
+      taskType: task.type,
+      priceAnomalyLabel: bid.priceAnomaly.label,
+      price: bid.cost,
+      clearingPrice,
+      explanation: explanation.summary,
+    });
     await storeMarketAnomaly({
       ...bid.priceAnomaly,
       timestamp: Date.now(),
@@ -1118,6 +1131,24 @@ export async function runMission(mission: string, clientRunNumber?: number, onEv
 
   await recordMission(result);
   await storeMission(result);
+
+  // Save per-agent run summaries to Mem0
+  await Promise.all(
+    repUpdates.map((upd) =>
+      saveRunSummaryToMemory({
+        agentId: upd.id,
+        runId,
+        missionId,
+        taskType: taskAssignments[upd.id]
+          ? Object.entries(taskAssignments).find(([, a]) => a.id === upd.id)?.[0] ?? "unknown"
+          : "unknown",
+        score: evalScore.overall,
+        outcome: upd.delta >= 0 ? "success" : "failure",
+        reason: upd.reason,
+      })
+    )
+  );
+
   emit({ type: "done", result });
   await appendMissionEvent({ eventType: "mission_completed", missionId, runNumber: runNum, timestamp: Date.now(), score: evalScore.overall, message: `Mission complete — score ${evalScore.overall}/100` });
   await appendMarketFeed({ timestamp: Date.now(), eventType: "mission_complete", text: `Run #${runNum} complete — score ${evalScore.overall}/100. Swarm: ${selectedAgents.map((a) => a.name).join(", ")}`, color: evalScore.overall >= 90 ? "#00ff88" : evalScore.overall >= 80 ? "#fbbf24" : "#ef4444" });
